@@ -1,0 +1,35 @@
+# Backups
+*.bak
+*.bak2
+*.bak3
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Models and binaries (downloaded separately per README)
+*.gguf
+*.bin
+*.onnx
+*.onnx.json
+piper_linux_*.tar.gz
+models/
+voices/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Temp audio
+*.wav
+test.wav

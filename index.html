@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Jarvis</title>
+<style>
+  body {
+    background: #0a0a0a; color: #e8e8e8;
+    font-family: -apple-system, system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    min-height: 100vh; margin: 0; padding: 40px 20px;
+  }
+  h1 { font-weight: 300; letter-spacing: 4px; margin: 20px 0; }
+  #btn {
+    width: 200px; height: 200px; border-radius: 50%;
+    background: #1a1a1a; border: 2px solid #333;
+    color: #888; font-size: 18px; cursor: pointer;
+    transition: all 0.2s; margin: 30px 0;
+  }
+  #btn:hover { border-color: #555; color: #ccc; }
+  #btn.recording {
+    background: #3a0a0a; border-color: #ff4444; color: #ff6666;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(255,68,68,0.4); }
+    50% { box-shadow: 0 0 0 20px rgba(255,68,68,0); }
+  }
+  #status { color: #888; height: 24px; margin: 10px 0; }
+  .bubble {
+    max-width: 600px; padding: 12px 18px; margin: 6px 0;
+    border-radius: 18px; line-height: 1.4;
+  }
+  .user { background: #2a4a7a; align-self: flex-end; }
+  .jarvis { background: #1a1a1a; border: 1px solid #333; }
+  #log { display: flex; flex-direction: column; width: 100%; max-width: 700px; }
+</style>
+</head>
+<body>
+  <h1>JARVIS</h1>
+  <button id="btn">CLICK TO SPEAK</button>
+  <div id="status">connecting…</div>
+  <div id="log"></div>
+  <audio id="player" style="display:none"></audio>
+
+<script>
+const WS_URL = `ws://${location.hostname}:8765`;
+const btn = document.getElementById('btn');
+const status = document.getElementById('status');
+const log = document.getElementById('log');
+const player = document.getElementById('player');
+
+let ws, mediaRecorder, chunks = [], recording = false;
+
+function setStatus(s) { status.textContent = s; }
+function addBubble(text, who) {
+  const div = document.createElement('div');
+  div.className = 'bubble ' + who;
+  div.textContent = text;
+  log.appendChild(div);
+  div.scrollIntoView({behavior: 'smooth'});
+}
+
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => setStatus('ready');
+  ws.onclose = () => {
+    setStatus('disconnected, retrying…');
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = (e) => console.error('ws error', e);
+  ws.onmessage = async (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'status') setStatus(msg.msg);
+    else if (msg.type === 'transcript') addBubble(msg.text, 'user');
+    else if (msg.type === 'reply') addBubble(msg.text, 'jarvis');
+    else if (msg.type === 'audio') {
+      const wav = atob(msg.wav_b64);
+      const arr = new Uint8Array(wav.length);
+      for (let i = 0; i < wav.length; i++) arr[i] = wav.charCodeAt(i);
+      const blob = new Blob([arr], {type: 'audio/wav'});
+      player.src = URL.createObjectURL(blob);
+      player.play();
+    }
+    else if (msg.type === 'error') {
+      setStatus('error: ' + msg.msg);
+      addBubble('[error: ' + msg.msg + ']', 'jarvis');
+    }
+  };
+}
+
+async function startRecording() {
+  const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+  mediaRecorder = new MediaRecorder(stream, {mimeType: 'audio/webm;codecs=opus'});
+  chunks = [];
+  mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(chunks, {type: 'audio/webm'});
+    blob.arrayBuffer().then(buf => ws.send(buf));
+    stream.getTracks().forEach(t => t.stop());
+  };
+  mediaRecorder.start();
+  recording = true;
+  btn.classList.add('recording');
+  btn.textContent = 'CLICK TO STOP';
+  setStatus('listening…');
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+  recording = false;
+  btn.classList.remove('recording');
+  btn.textContent = 'CLICK TO SPEAK';
+  setStatus('processing…');
+}
+
+btn.onclick = () => recording ? stopRecording() : startRecording();
+connect();
+</script>
+</body>
+</html>
