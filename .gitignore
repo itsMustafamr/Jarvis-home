@@ -1,5 +1,5 @@
 # Backups
-*.bak
+*.bak*
 *.bak2
 *.bak3
 
