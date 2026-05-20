@@ -34,14 +34,40 @@
   .user { background: #2a4a7a; align-self: flex-end; }
   .jarvis { background: #1a1a1a; border: 1px solid #333; }
   #log { display: flex; flex-direction: column; width: 100%; max-width: 700px; }
+  .controls {
+    display: flex; gap: 16px; align-items: center;
+    color: #888; font-size: 13px; margin: 10px 0;
+  }
+  .controls label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .controls select {
+    background: #1a1a1a; color: #ccc; border: 1px solid #333;
+    padding: 4px 8px; border-radius: 4px;
+  }
+  #preview {
+    width: 160px; height: 120px; border: 1px solid #333;
+    border-radius: 4px; background: #000; margin-top: 4px;
+    display: none;
+  }
+  #preview.active { display: block; }
 </style>
 </head>
 <body>
   <h1>JARVIS</h1>
   <button id="btn">CLICK TO SPEAK</button>
   <div id="status">connecting…</div>
+  <div class="controls">
+    <label>Camera:
+      <select id="cam-mode">
+        <option value="off" selected>Off</option>
+        <option value="ask">Ask each time</option>
+        <option value="always">Always allow</option>
+      </select>
+    </label>
+    <video id="preview" autoplay muted playsinline></video>
+  </div>
   <div id="log"></div>
   <audio id="player" style="display:none"></audio>
+  <canvas id="snap" style="display:none"></canvas>
 
 <script>
 const WS_URL = `ws://${location.hostname}:8765`;
@@ -49,8 +75,12 @@ const btn = document.getElementById('btn');
 const status = document.getElementById('status');
 const log = document.getElementById('log');
 const player = document.getElementById('player');
+const camMode = document.getElementById('cam-mode');
+const preview = document.getElementById('preview');
+const snap = document.getElementById('snap');
 
 let ws, mediaRecorder, chunks = [], recording = false;
+let videoStream = null;
 
 function setStatus(s) { status.textContent = s; }
 function addBubble(text, who) {
@@ -59,6 +89,93 @@ function addBubble(text, who) {
   div.textContent = text;
   log.appendChild(div);
   div.scrollIntoView({behavior: 'smooth'});
+}
+
+const savedMode = localStorage.getItem('jarvis-cam-mode');
+if (savedMode) camMode.value = savedMode;
+camMode.onchange = async () => {
+  localStorage.setItem('jarvis-cam-mode', camMode.value);
+  if (camMode.value !== 'always' && videoStream) {
+    videoStream.getTracks().forEach(t => t.stop());
+    videoStream = null;
+    preview.srcObject = null;
+    preview.classList.remove('active');
+  }
+  if (camMode.value === 'always' && !videoStream) {
+    await ensureCameraStream();
+  }
+};
+
+async function ensureCameraStream() {
+  if (videoStream) return videoStream;
+  try {
+    videoStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480 }
+    });
+    preview.srcObject = videoStream;
+    preview.classList.add('active');
+    return videoStream;
+  } catch (e) {
+    console.error('camera denied', e);
+    videoStream = null;
+    return null;
+  }
+}
+
+function captureFrameToJpegB64() {
+  return new Promise((resolve) => {
+    const video = preview;
+    if (video.readyState < 2 || video.videoWidth === 0) {
+      setTimeout(() => captureFrameToJpegB64().then(resolve), 100);
+      return;
+    }
+    snap.width = video.videoWidth;
+    snap.height = video.videoHeight;
+    const ctx = snap.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    snap.toBlob((blob) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result;
+        const b64 = dataUrl.split(',')[1];
+        resolve(b64);
+      };
+      reader.readAsDataURL(blob);
+    }, 'image/jpeg', 0.85);
+  });
+}
+
+async function handleFrameRequest() {
+  const mode = camMode.value;
+  if (mode === 'off') {
+    ws.send(JSON.stringify({type: 'frame', data_b64: null, reason: 'camera off'}));
+    return;
+  }
+  let stream = videoStream;
+  let temporary = false;
+  if (!stream) {
+    if (mode === 'ask') {
+      if (!confirm('Jarvis wants to use your camera for this question. Allow?')) {
+        ws.send(JSON.stringify({type: 'frame', data_b64: null, reason: 'user denied'}));
+        return;
+      }
+    }
+    stream = await ensureCameraStream();
+    temporary = (mode === 'ask');
+    if (!stream) {
+      ws.send(JSON.stringify({type: 'frame', data_b64: null, reason: 'getUserMedia failed'}));
+      return;
+    }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  const b64 = await captureFrameToJpegB64();
+  ws.send(JSON.stringify({type: 'frame', data_b64: b64}));
+  if (temporary && videoStream) {
+    videoStream.getTracks().forEach(t => t.stop());
+    videoStream = null;
+    preview.srcObject = null;
+    preview.classList.remove('active');
+  }
 }
 
 function connect() {
@@ -74,6 +191,9 @@ function connect() {
     if (msg.type === 'status') setStatus(msg.msg);
     else if (msg.type === 'transcript') addBubble(msg.text, 'user');
     else if (msg.type === 'reply') addBubble(msg.text, 'jarvis');
+    else if (msg.type === 'frame_request') {
+      handleFrameRequest();
+    }
     else if (msg.type === 'audio') {
       const wav = atob(msg.wav_b64);
       const arr = new Uint8Array(wav.length);
