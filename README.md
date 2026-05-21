@@ -5,7 +5,7 @@ A fully local voice assistant running on NVIDIA Jetson Orin Nano Super 8GB. Spea
 <p align="center">
   <img src="https://miro.medium.com/1*2QlX10Yrh7qBcfzmLSv4Fg.gif" width="700" alt="Jarvis home assistant demo">
 </p>
-
+Source : https://medium.com/@sincerelyandtotallyangela/from-print-hello-to-j-a-r-v-i-s-my-diy-ai-voice-assistant-adventure-af4c7996ce90
 Stack: Gemma 4 E2B (multimodal LLM) + whisper.cpp (STT) + Piper (TTS), glued together with a Python WebSocket server and a minimal HTML push-to-talk frontend.
 
 **Why this exists:** I wanted a JARVIS-style assistant that runs entirely on my own hardware, hits the LLM, vision, STT, and TTS pipeline locally, and feels responsive (~3s end-to-end on Orin Nano in MAXN_SUPER mode).
