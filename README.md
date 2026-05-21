@@ -1,8 +1,12 @@
 # Jarvis-home
 
-A fully local voice assistant running on NVIDIA Jetson Orin Nano Super 8GB. Speak to it from any browser on your network, get spoken replies in a British accent. Vision-capable (the LLM has a vision projector loaded). Zero cloud APIs.
+A fully local voice assistant running on NVIDIA Jetson Orin Nano Super 8GB. Speak to it from any browser on your network, get spoken replies in a British accent. Vision-capable. Zero cloud APIs.
 
-**Stack:** Gemma 4 E2B (multimodal LLM) + whisper.cpp (STT) + Piper (TTS), glued together with a Python WebSocket server and a minimal HTML push-to-talk frontend.
+<p align="center">
+  <img src="https://miro.medium.com/1*2QlX10Yrh7qBcfzmLSv4Fg.gif" width="700" alt="Jarvis home assistant demo">
+</p>
+
+Stack: Gemma 4 E2B (multimodal LLM) + whisper.cpp (STT) + Piper (TTS), glued together with a Python WebSocket server and a minimal HTML push-to-talk frontend.
 
 **Why this exists:** I wanted a JARVIS-style assistant that runs entirely on my own hardware, hits the LLM, vision, STT, and TTS pipeline locally, and feels responsive (~3s end-to-end on Orin Nano in MAXN_SUPER mode).
 
