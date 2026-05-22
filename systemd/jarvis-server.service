@@ -1,0 +1,19 @@
+[Unit]
+Description=Jarvis WebSocket server (browser push-to-talk path)
+After=network-online.target llama-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flash
+Group=flash
+WorkingDirectory=/home/flash/jarvis
+ExecStart=/usr/bin/python3 /home/flash/jarvis/server.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

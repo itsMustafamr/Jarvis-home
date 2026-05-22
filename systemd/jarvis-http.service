@@ -1,0 +1,18 @@
+[Unit]
+Description=Jarvis HTTP server (serves index.html on :8000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flash
+Group=flash
+WorkingDirectory=/home/flash/jarvis
+ExecStart=/usr/bin/python3 -m http.server 8000
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

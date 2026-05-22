@@ -1,0 +1,29 @@
+[Unit]
+Description=llama.cpp server (Gemma 4 E2B for JARVIS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flash
+Group=flash
+WorkingDirectory=/home/flash/llama.cpp
+ExecStart=/home/flash/llama.cpp/build/bin/llama-server \
+  -m /home/flash/models/gemma-4-E2B-it-Q4_K_M.gguf \
+  --mmproj /home/flash/models/mmproj-F16.gguf \
+  --host 0.0.0.0 --port 8080 \
+  -c 4096 -ngl 99 \
+  --image-min-tokens 70 --image-max-tokens 70 -t 4 \
+  --reasoning-budget 0
+Restart=on-failure
+RestartSec=5
+# Loading ~4GB model into VRAM can take a while on first cold boot.
+TimeoutStartSec=180
+# Keep the process alive across logout
+KillMode=mixed
+# Pipe logs to journal
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

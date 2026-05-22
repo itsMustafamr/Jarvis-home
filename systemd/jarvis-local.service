@@ -1,0 +1,23 @@
+[Unit]
+Description=Jarvis local input daemon (Anker PowerConf S3 call button)
+After=network-online.target llama-server.service sound.target
+Wants=network-online.target
+# This is the "press the button, Mac off, it just works" path.
+# Needs llama-server up and the S3 plugged in via USB.
+
+[Service]
+Type=simple
+User=flash
+Group=flash
+# audio = ALSA, plugdev = /dev/hidraw* via the udev rule shipped alongside this file
+SupplementaryGroups=audio plugdev
+WorkingDirectory=/home/flash/jarvis
+ExecStart=/usr/bin/python3 /home/flash/jarvis/local_input.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

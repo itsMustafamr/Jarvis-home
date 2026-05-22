@@ -1,0 +1,4 @@
+# Give the `plugdev` group read access to the Anker PowerConf S3 HID device
+# so local_input.py can read the call-button presses from /dev/hidraw* without root.
+# Vendor 291a, product 3302 (matches the constants in local_input.py).
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="291a", ATTRS{idProduct}=="3302", MODE="0660", GROUP="plugdev", TAG+="uaccess"
