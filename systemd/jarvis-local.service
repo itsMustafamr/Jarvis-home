@@ -12,7 +12,7 @@ Group=flash
 # audio = ALSA, plugdev = /dev/hidraw* via the udev rule shipped alongside this file
 SupplementaryGroups=audio plugdev
 WorkingDirectory=/home/flash/jarvis
-ExecStart=/usr/bin/python3 /home/flash/jarvis/local_input.py
+ExecStart=/home/flash/jarvis-venv/bin/python3 /home/flash/jarvis/local_input.py
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

@@ -8,7 +8,7 @@ Type=simple
 User=flash
 Group=flash
 WorkingDirectory=/home/flash/jarvis
-ExecStart=/usr/bin/python3 /home/flash/jarvis/server.py
+ExecStart=/home/flash/jarvis-venv/bin/python3 /home/flash/jarvis/server.py
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

@@ -1,20 +1,45 @@
 # Running Jarvis
 
-Two ways to run it on the Jetson: **manual** (four terminals, for testing and dev) or **systemd** (one command, runs forever, survives reboots).
+Two ways to run it on the Jetson: **manual** (tmux windows, for testing and dev) or **systemd** (one command, runs forever, survives reboots).
 
-All commands assume the user is `flash` and the repo is at `/home/flash/jarvis`. Adjust paths if yours differ.
+All commands assume the user is `flash`, the repo is at `/home/flash/jarvis`, and the Python venv is at `/home/flash/jarvis-venv` (activated by the `jarvis-env` shell alias). Adjust paths if yours differ.
+
+> **Important:** Every Python script in this project requires the venv. Either run `jarvis-env` first in the shell, or call the scripts with the venv's interpreter directly: `/home/flash/jarvis-venv/bin/python3 server.py`. The system `python3` does not have `ultralytics`, `torch`, or `silero-vad`.
 
 ---
 
-## Manual start (four terminals via tmux or ssh)
+## tmux 90-second primer
+
+```bash
+tmux new -s jarvis              # create a session named "jarvis" (also attaches)
+tmux ls                         # list running sessions
+tmux attach -t jarvis           # reattach to it later
+tmux kill-session -t jarvis     # nuke it
+```
+
+Inside a session, every shortcut starts with `Ctrl-b` (the "prefix") then a second key:
+
+| Keys | Action |
+|---|---|
+| `Ctrl-b` `d` | Detach (session keeps running in background) |
+| `Ctrl-b` `c` | Create a new window |
+| `Ctrl-b` `0` … `9` | Switch to window N |
+| `Ctrl-b` `n` / `p` | Next / previous window |
+| `Ctrl-b` `,` | Rename current window |
+| `Ctrl-b` `[` | Scrollback mode (arrows / PgUp, `q` to exit) |
+
+Stick to windows; ignore splits/panes until you need them.
+
+---
+
+## Manual start (tmux windows)
 
 ```bash
 ssh flash@<jetson-ip>
-tmux new -s jarvis
-# Ctrl-b " to split, Ctrl-b o to switch panes
+tmux new -s jarvis              # creates window 0
 ```
 
-**Pane 1 — llama-server (the LLM)**
+**Window 0 — llama-server (the LLM)**
 
 ```bash
 cd ~/llama.cpp && ./build/bin/llama-server \
@@ -26,27 +51,36 @@ cd ~/llama.cpp && ./build/bin/llama-server \
   --reasoning-budget 0
 ```
 
-Wait until you see `main: HTTP server listening` before starting the others.
+Wait until you see `srv main: server is listening on http://0.0.0.0:8080` before starting the others. No venv needed — this is a C++ binary, not Python.
 
-**Pane 2 — Jarvis WebSocket server (browser path)**
+Then press `Ctrl-b c` to open window 1 and run the rest. Each window starts as a fresh shell, so the venv must be activated in each one.
 
-```bash
-cd ~/jarvis && python3 server.py
-```
-
-**Pane 3 — HTTP server (only needed for browser frontend)**
+**Window 1 — Anker S3 button daemon (the headless / Mac-off path)**
 
 ```bash
-cd ~/jarvis && python3 -m http.server 8000
-```
-
-**Pane 4 — Anker S3 button daemon (the headless path)**
-
-```bash
+jarvis-env
 cd ~/jarvis && python3 local_input.py
 ```
 
-This is the one that makes "Mac off, press the button, it works" true. It listens for HID events from the S3 over USB, captures audio from the S3 mic, runs the full pipeline, and plays the reply through the S3 speaker.
+This is the one that makes "Mac off, press the button, it works" true. Listens for HID events from the S3 over USB, captures audio from the S3 mic, runs the full pipeline, plays the reply through the S3 speaker. For your two-process showcase setup, this plus llama-server is all you need.
+
+**Window 2 — Jarvis WebSocket server (browser path, optional)**
+
+```bash
+jarvis-env
+cd ~/jarvis && python3 server.py
+```
+
+**Window 3 — HTTP server for index.html (only if you want the browser frontend)**
+
+```bash
+jarvis-env
+cd ~/jarvis && python3 -m http.server 8000
+```
+
+(The http.server module is in stdlib so technically the venv isn't required here, but it keeps the four windows symmetrical.)
+
+When everything is up, press `Ctrl-b d` to detach. Close the SSH window. Everything keeps running. Come back later with `ssh flash@<jetson-ip>` then `tmux attach -t jarvis`.
 
 **Quick smoke tests**
 
@@ -54,12 +88,15 @@ This is the one that makes "Mac off, press the button, it works" true. It listen
 # LLM is up?
 curl -s http://127.0.0.1:8080/health
 
-# WebSocket is up?
+# Which ports are listening?
 ss -tlnp | grep -E '8765|8080|8000'
 
 # S3 plugged in and recognized?
 arecord -l | grep -i powerconf
 ls /dev/hidraw*
+
+# Venv has the right packages?
+jarvis-env && python3 -c "import ultralytics, torch, silero_vad, websockets, aiohttp; print('OK')"
 ```
 
 ---
@@ -69,7 +106,7 @@ ls /dev/hidraw*
 The page needs HTTPS or `localhost` to get mic permission. Cheapest fix: SSH tunnel from the client.
 
 ```bash
-# From your Mac, phone-over-USB, laptop, whatever:
+# From your Mac, laptop, etc:
 ssh -L 8000:localhost:8000 -L 8765:localhost:8765 flash@<jetson-ip>
 # then open http://localhost:8000 in the browser
 ```
@@ -88,6 +125,8 @@ cd ~/jarvis/systemd
 ```
 
 That copies the four `.service` files into `/etc/systemd/system/`, installs a udev rule so the `plugdev` group can read the S3's hidraw device, adds `flash` to `plugdev`, then enables and starts everything in the right order.
+
+The Python units use `/home/flash/jarvis-venv/bin/python3` directly, so they pick up the venv's packages without anything to activate. If your venv lives somewhere else, edit `ExecStart=` in each `.service` file before running `install.sh`.
 
 **Day-to-day commands**
 
@@ -110,10 +149,10 @@ journalctl -u jarvis-local -f
 journalctl -u jarvis-server -f
 ```
 
-After this point you should be able to:
+After this you should be able to:
 
 1. Reboot the Jetson (`sudo reboot`).
-2. Wait ~30s.
+2. Wait ~30s for the LLM to load.
 3. Press the Anker S3 call button.
 4. Hear Alba reply — with the Mac off and no SSH session anywhere.
 
@@ -121,11 +160,14 @@ After this point you should be able to:
 
 ## Troubleshooting
 
+**`ModuleNotFoundError: No module named 'ultralytics'` (or `torch`, or `silero_vad`)**
+You ran the script with system Python instead of the venv. Run `jarvis-env` first, then `python3 your_script.py`. For systemd, confirm `ExecStart=` points at `/home/flash/jarvis-venv/bin/python3` in the relevant `.service` file.
+
 **`llama-server` won't start under systemd**
 Run the ExecStart command manually as `flash` first to see the real error. Most common: model file path wrong, or CUDA not visible because the unit is running under a stripped environment. If CUDA is the issue, add `Environment=PATH=/usr/local/cuda/bin:/usr/bin:/bin` to the unit.
 
 **`jarvis-local` errors with `Permission denied` on `/dev/hidrawX`**
-The udev rule didn't take effect. Re-run `sudo udevadm control --reload-rules && sudo udevadm trigger`, unplug and replug the S3, and confirm `flash` is in `plugdev` (`groups flash`).
+The udev rule didn't take effect. Re-run `sudo udevadm control --reload-rules && sudo udevadm trigger`, unplug and replug the S3, and confirm `flash` is in `plugdev` (`groups flash`). A logout/login may be required for the group change.
 
 **`jarvis-local` errors with `arecord: no such PCM` or similar ALSA error**
 The S3 isn't showing up as ALSA card "S3". Check `arecord -l`. If the card name differs, update `S3_DEVICE` in `audio_io.py` and `S3_ALSA_CARD` in `local_input.py`.
