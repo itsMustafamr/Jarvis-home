@@ -171,11 +171,20 @@ RX_REMEMBER = re.compile(
     re.IGNORECASE,
 )
 
-# "what do you know about me", "what do you remember", "tell me what you know"
+# Recall phrasings:
+#   "what do you know / remember about me"
+#   "do you know / remember anything about me"
+#   "do you know about me"
+#   "what have I told you"
+#   "tell me what you know / remember"
+#   "what's on file" / "what's in your memory" / "anything on file"
 RX_RECALL = re.compile(
     r"\b(?:what\s+do\s+you\s+(?:know|remember)(?:\s+about\s+me)?"
+    r"|do\s+you\s+(?:know|remember)(?:\s+anything)?(?:\s+about\s+me)?"
     r"|tell\s+me\s+what\s+you\s+(?:know|remember)"
-    r"|what\s+have\s+i\s+told\s+you)\b",
+    r"|what\s+have\s+i\s+told\s+you"
+    r"|(?:what(?:'s|\s+is))?\s*(?:on\s+file|in\s+(?:your\s+)?memory|stored)"
+    r"|anything\s+(?:on\s+file|stored|in\s+memory))\b",
     re.IGNORECASE,
 )
 
