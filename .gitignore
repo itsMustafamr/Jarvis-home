@@ -33,3 +33,10 @@ Thumbs.db
 # Temp audio
 *.wav
 test.wav
+
+# Persistent memory store (SQLite + rolling history)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

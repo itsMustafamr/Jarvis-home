@@ -12,6 +12,7 @@ from pathlib import Path
 
 import audio_io
 import pipeline
+from scheduler import get_scheduler
 from vad import SileroEndpointer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -28,6 +29,12 @@ VAD_MAX_DURATION_S = 15
 HID_CALL_PRESS = b"\x02\x01"
 HID_VOL_UP = b"\x01\x01"
 HID_VOL_DOWN = b"\x01\x02"
+
+# Set while a call-button cycle is in progress; the announcement player waits
+# on this to avoid talking over the user mid-conversation.
+cycle_busy = asyncio.Event()
+# How long to wait between polite-check ticks when a cycle is in flight.
+ANNOUNCEMENT_WAIT_TICK_S = 0.2
 
 
 def find_s3_hidraw() -> str:
@@ -74,6 +81,31 @@ def drain_hidraw(fd: int) -> int:
     return drained
 
 
+async def announcement_player():
+    """Drain the scheduler queue and speak announcements through the S3.
+
+    Waits politely while `cycle_busy` is set so an alert never interrupts a
+    conversation. Items remain queued in the scheduler — there is no time-out
+    or drop policy, so even hours-long timers do fire eventually.
+    """
+    sched = get_scheduler()
+    while True:
+        text = await sched.get_announcement()
+
+        # Politely wait out any in-progress conversation cycle.
+        while cycle_busy.is_set():
+            await asyncio.sleep(ANNOUNCEMENT_WAIT_TICK_S)
+
+        log.info(f"ANNOUNCE: {text!r}")
+        with tempfile.TemporaryDirectory() as tmp:
+            out_wav = os.path.join(tmp, "ann.wav")
+            ok = await asyncio.to_thread(pipeline.synthesize, text, out_wav)
+            if not ok:
+                log.error("announcement TTS failed; dropping")
+                continue
+            await asyncio.to_thread(audio_io.play_wav, out_wav)
+
+
 async def handle_call_press(endpointer: SileroEndpointer):
     t_press = time.time()
     log.info("=" * 60)
@@ -116,7 +148,6 @@ async def hid_event_loop(hidraw_path: str, endpointer: SileroEndpointer):
     log.info(f"opening {hidraw_path} for HID events")
     fd = os.open(hidraw_path, os.O_RDONLY)
     loop = asyncio.get_event_loop()
-    cycle_busy = False
 
     try:
         while True:
@@ -128,10 +159,10 @@ async def hid_event_loop(hidraw_path: str, endpointer: SileroEndpointer):
             for i in range(0, len(data) - 1, 2):
                 report = data[i:i+2]
                 if report == HID_CALL_PRESS:
-                    if cycle_busy:
+                    if cycle_busy.is_set():
                         log.info("call pressed but cycle in progress; ignoring")
                         continue
-                    cycle_busy = True
+                    cycle_busy.set()
                     try:
                         await handle_call_press(endpointer)
                     finally:
@@ -139,7 +170,7 @@ async def hid_event_loop(hidraw_path: str, endpointer: SileroEndpointer):
                         drained = drain_hidraw(fd)
                         if drained:
                             log.info(f"drained {drained} bytes of queued HID events")
-                        cycle_busy = False
+                        cycle_busy.clear()
                 elif report == HID_VOL_UP:
                     log.info("vol up")
                     audio_io.volume_up(card=S3_ALSA_CARD)
@@ -168,6 +199,12 @@ async def main():
         silence_ms=VAD_SILENCE_MS,
         max_duration_s=VAD_MAX_DURATION_S,
     )
+
+    # Background tasks: scheduler ticks pending timers/reminders into a queue;
+    # announcement_player drains the queue and speaks each one through the S3.
+    sched = get_scheduler()
+    await sched.start()
+    asyncio.create_task(announcement_player(), name="announcement_player")
 
     log.info("ready. Press the call button on the S3 to talk.")
     await hid_event_loop(hidraw_path, endpointer)

@@ -16,6 +16,8 @@ import aiohttp
 import lights
 import weather
 import vision
+import memory
+import time_intent
 from vision_intent import is_vision_intent
 
 # ---- Config (mirrors server.py) ----
@@ -64,9 +66,19 @@ def transcribe(wav_path: str) -> str:
 
 
 async def call_llama(user_text: str) -> str:
-    """JARVIS persona via /completion + few-shot. Bypasses Gemma 4 thinking template."""
+    """JARVIS persona via /completion + few-shot. Bypasses Gemma 4 thinking template.
+
+    Splices in any stored facts as a 'Known about the user:' line and the last
+    few (user, jarvis) turns as additional history before the current question.
+    """
     t0 = time.time()
-    prompt = f"""You are JARVIS, a calm British butler. You always reply in ONE short sentence directly to the user. You never narrate, plan, or describe what you are doing. Always reply in English.
+    facts_block, history = memory.get_prompt_context()
+
+    history_text = ""
+    for u, j in history:
+        history_text += f"User: {u}\nJARVIS: {j}\n\n"
+
+    prompt = f"""{facts_block}You are JARVIS, a calm British butler. You always reply in ONE short sentence directly to the user. You never narrate, plan, or describe what you are doing. Always reply in English.
 
 User: How are you?
 JARVIS: Operational, sir.
@@ -86,7 +98,7 @@ JARVIS: I'm afraid that's beyond my reach, sir.
 User: Open the door.
 JARVIS: I haven't the hands for that, sir.
 
-User: {user_text}
+{history_text}User: {user_text}
 JARVIS:"""
 
     payload = {
@@ -147,14 +159,38 @@ def synthesize(text: str, output_wav: str) -> bool:
     return True
 
 
-async def route(transcript: str, frame_provider=None) -> str:
+async def route(transcript: str, frame_provider=None, record_turn: bool = True) -> str:
     """Intent router. Returns the reply text.
 
     Args:
         transcript: STT output
         frame_provider: optional async callable () -> bytes|None for vision intents.
                         If None, vision intents return a graceful fallback.
+        record_turn: if True (default), append this (user, jarvis) exchange to
+                     persistent memory so later replies can refer back to it.
     """
+    reply = await _route_inner(transcript, frame_provider)
+    if record_turn:
+        try:
+            memory.add_turn(transcript, reply)
+        except Exception:
+            log.exception("could not record turn in memory")
+    return reply
+
+
+async def _route_inner(transcript: str, frame_provider) -> str:
+    # Memory intents: remember / recall / forget.
+    mem_reply = await asyncio.to_thread(memory.handle, transcript)
+    if mem_reply is not None:
+        log.info(f"INTENT memory: {mem_reply!r}")
+        return mem_reply
+
+    # Date / time / timer / reminder intents.
+    time_reply = await asyncio.to_thread(time_intent.handle, transcript)
+    if time_reply is not None:
+        log.info(f"INTENT time: {time_reply!r}")
+        return time_reply
+
     lights_reply = await asyncio.to_thread(lights.handle, transcript)
     if lights_reply is not None:
         log.info(f"INTENT lights: {lights_reply!r}")
