@@ -202,7 +202,17 @@ def _fmt_clock(t: dt.datetime) -> str:
 # Intent handler
 # ----------------------------------------------------------------------
 
+def _strip_intent_punct(text: str) -> str:
+    """Replace mid-utterance punctuation with spaces so regexes that key on
+    whitespace separators aren't broken by Whisper's habit of inserting
+    commas (e.g. 'Remind me, in five minutes.' -> 'Remind me in five minutes')."""
+    text = re.sub(r"[,.;:?!]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
 def is_time_intent(text: str) -> bool:
+    text = _strip_intent_punct(text)
     return bool(
         RX_WHAT_TIME.search(text)
         or RX_WHAT_DATE.search(text)
@@ -217,6 +227,7 @@ def is_time_intent(text: str) -> bool:
 
 
 def handle(text: str) -> Optional[str]:
+    text = _strip_intent_punct(text)
     # 1. Plain "what time is it" / "what's the date"
     if RX_WHAT_TIME.search(text):
         now = dt.datetime.now()

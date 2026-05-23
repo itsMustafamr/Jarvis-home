@@ -223,7 +223,18 @@ def _normalize_for_storage(text: str) -> str:
     return t
 
 
+def _strip_intent_punct(text: str) -> str:
+    """Replace mid-utterance punctuation with spaces so regexes that key on
+    whitespace separators ('remember\\s+...') aren't broken by Whisper's
+    habit of inserting commas after introductory imperatives
+    (e.g. 'Remember, Mohammed.' -> 'Remember Mohammed')."""
+    text = re.sub(r"[,.;:?!]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
 def is_memory_intent(text: str) -> bool:
+    text = _strip_intent_punct(text)
     return bool(
         RX_REMEMBER.search(text) or RX_RECALL.search(text) or RX_FORGET.search(text)
     )
@@ -231,6 +242,7 @@ def is_memory_intent(text: str) -> bool:
 
 def handle(text: str) -> Optional[str]:
     """Try to handle a memory intent. Returns reply string if handled, else None."""
+    text = _strip_intent_punct(text)
     m = RX_FORGET.search(text)
     if m:
         query = m.group("query").strip().rstrip(".!?,;:")
