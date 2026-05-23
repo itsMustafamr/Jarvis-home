@@ -25,11 +25,21 @@ Whenever Claude makes a code change, before declaring it done, Claude must produ
 
 1. **Concrete utterances** to speak into the Anker (or type into the browser). Not "try the feature" — actual sentences.
 2. **Expected log output** — the specific lines Rah should see, including which `INTENT` tag identifies a fast-path vs LLM fallback.
-3. **Where to fetch the logs from** — every test plan must include the exact command. Rah forgets which log lives where, so always remind him. The big three:
+3. **Where to fetch the logs from** — every test plan must include the exact command. Rah forgets which log lives where, so always remind him. **Always check whether he is running via systemd or manually in tmux before giving the command.**
+
+   **If running via systemd** (after `systemd/install.sh` has been run):
    - `journalctl -u jarvis-local -f` — the Anker S3 button daemon (`local_input.py`). Memory, scheduler, time/timer/reminder, lights, weather, vision, LLM — all transit through here when the button is pressed.
    - `journalctl -u jarvis-server -f` — the WebSocket server (`server.py`), used only on the browser/phone path.
    - `journalctl -u llama-server -f` — the LLM. Look for `prompt eval time` / `eval time` to see token throughput, and `slot launch_slot_` to see when a request lands.
-   - For manual tmux runs, the same output is just printed to the tmux window's stdout.
+
+   **If running manually in tmux** (currently the default — `systemd/install.sh` has not been run):
+   - The output prints to the tmux window. To also save it to a file, recommend Rah re-launch the script with `tee`:
+     ```bash
+     python3 local_input.py 2>&1 | tee /tmp/jarvis-local.log
+     ```
+     Then he can `cat /tmp/jarvis-local.log` after testing.
+   - Alternative without restarting: inside tmux, `Ctrl-b :` → `pipe-pane -o "cat >> /tmp/jarvis-local.log"`. Same `Ctrl-b : pipe-pane` (no args) to stop.
+   - **`journalctl -u jarvis-local` returns "No entries" in this mode — do not suggest it.**
 4. **Pass/fail criteria** — what specifically tells Rah it worked or didn't.
 
 Then Claude STOPS and waits for Rah to test and paste logs back. Don't move on to the next feature until Rah has confirmed.

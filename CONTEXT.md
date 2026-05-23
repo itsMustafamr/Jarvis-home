@@ -97,6 +97,12 @@ CONTEXT.md         This file
 
 (Newest first. Dated entries.)
 
+### 2026-05-23 — Punctuation-tolerant intent matching (post-test bug fix)
+**Files modified:** `memory.py` and `time_intent.py` both gained a `_strip_intent_punct()` helper that replaces commas / periods / semicolons / colons / `?` / `!` with spaces before regex matching. Applied at the top of `is_X_intent` and `handle()` in each module.
+**Reason:** First Anker test of the memory feature on 2026-05-23 showed "remember Mohammed" silently failing. Most likely cause: Whisper's `base.en` inserts a comma after introductory imperatives ("Remember, Mohammed.") and the regex required whitespace immediately after `remember`. Same vulnerability existed in every other intent regex.
+**Process docs updated:** `CLAUDE.md` now distinguishes systemd-mode log gathering (`journalctl -u jarvis-local`) from tmux-mode (tee to file or `pipe-pane`) — Claude must check which mode Rah is in before recommending a log command.
+**Status:** Awaiting Anker re-test.
+
 ### 2026-05-23 — Bug fixes: bare reminders + list/cancel + LLM hallucination guard
 **Files modified:** `scheduler.py` (added `list_pending()` and `cancel_all()`), `time_intent.py` (added `RX_REMIND_BARE`, `RX_LIST_PENDING`, `RX_CANCEL_ALL` and corresponding branches in `handle()`), `pipeline.py` (system prompt now includes explicit rules that JARVIS cannot schedule, control devices, or see the schedule, plus three new few-shot examples covering reminder-set / list / cancel).
 **Closed bugs:** B-001, B-002.
