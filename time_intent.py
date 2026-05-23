@@ -67,6 +67,37 @@ RX_REMIND_AT = re.compile(
     re.IGNORECASE,
 )
 
+# Bare reminder phrasings (no body): "remind me in 5 minutes",
+# "set a reminder in 5 minutes", "make the reminder for 10 mins", etc.
+# Whisper often drops short function words so these need to be permissive.
+RX_REMIND_BARE = re.compile(
+    r"\b(?:remind\s+me|"
+    r"(?:set|create|make|start)\s+(?:a|the|me\s+a)?\s*reminder|"
+    r"(?:a|the)?\s*reminder)\s+"
+    r"(?:for\s+|in\s+)"
+    r"(?P<value>\d+(?:\.\d+)?|a|an|one|two|three|four|five|six|seven|eight|"
+    r"nine|ten|fifteen|twenty|thirty|forty[-\s]?five|sixty)"
+    r"[-\s]?(?P<unit>seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)\b",
+    re.IGNORECASE,
+)
+
+# "list my reminders", "what reminders do I have", "do I have any reminders",
+# "what's on my list", "any timers"
+RX_LIST_PENDING = re.compile(
+    r"\b(?:list\s+(?:my\s+)?(?:reminders?|timers?)"
+    r"|what\s+(?:reminders?|timers?)\s+(?:do\s+i\s+have|are\s+(?:there|set|pending))"
+    r"|(?:do\s+i\s+have|are\s+there)\s+(?:any\s+)?(?:recent\s+|pending\s+)?(?:reminders?|timers?)"
+    r"|what(?:'s|\s+is)\s+(?:on\s+my\s+)?(?:list|schedule|pending))\b",
+    re.IGNORECASE,
+)
+
+# "cancel my reminders", "cancel all timers", "clear my reminders"
+RX_CANCEL_ALL = re.compile(
+    r"\b(?:cancel|clear|delete|remove|drop)\s+(?:all\s+|my\s+|the\s+)?"
+    r"(?:reminders?|timers?|alarms?|schedule)\b",
+    re.IGNORECASE,
+)
+
 
 WORDS_TO_NUM = {
     "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
@@ -179,6 +210,9 @@ def is_time_intent(text: str) -> bool:
         or RX_TIMER_NUM_BEFORE.search(text)
         or RX_REMIND_IN.search(text)
         or RX_REMIND_AT.search(text)
+        or RX_REMIND_BARE.search(text)
+        or RX_LIST_PENDING.search(text)
+        or RX_CANCEL_ALL.search(text)
     )
 
 
@@ -195,8 +229,35 @@ def handle(text: str) -> Optional[str]:
         suffix = "th" if 10 <= day % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
         return f"It's {now.strftime('%A')} the {day}{suffix} of {now.strftime('%B')}, sir."
 
-    # 2. Reminders ("remind me to X in/at Y") — checked BEFORE timers so the
-    #    word "minute" inside the reminder body doesn't trip the timer regex.
+    # 2. Listing / cancelling scheduled items (checked early so phrases like
+    #    "do I have any reminders" don't fall into the schedule patterns).
+    if RX_LIST_PENDING.search(text):
+        sched = get_scheduler()
+        items = sched.list_pending()
+        if not items:
+            return "Nothing scheduled, sir."
+        now = dt.datetime.now().timestamp()
+        parts = []
+        for fire_at, _text in items:
+            secs = max(0, fire_at - now)
+            if secs >= 60:
+                parts.append(_human_duration(secs))
+            else:
+                parts.append(f"{int(round(secs))} seconds")
+        if len(parts) == 1:
+            return f"One item, due in {parts[0]}, sir."
+        return f"{len(parts)} items, due in {', '.join(parts)}, sir."
+
+    if RX_CANCEL_ALL.search(text):
+        sched = get_scheduler()
+        n = sched.cancel_all()
+        if n == 0:
+            return "Nothing to cancel, sir."
+        return "Cancelled, sir." if n == 1 else f"All {n} cancelled, sir."
+
+    # 3. Reminders with an explicit body ("remind me to X in/at Y") — checked
+    #    BEFORE timers so the word "minute" inside the body can't trip the
+    #    timer regex.
     m = RX_REMIND_IN.search(text)
     if m:
         seconds = _seconds_from(m.group("value"), m.group("unit"))
@@ -225,7 +286,21 @@ def handle(text: str) -> Optional[str]:
         sched.schedule_at(target.timestamp(), f"Sir, you asked to be reminded to {what}.")
         return f"I'll remind you at {_fmt_clock(target)}, sir."
 
-    # 3. Timers — try both word orderings.
+    # 4. Bare reminder ("remind me in N units" / "set a reminder in N units").
+    #    No body — schedule a generic announcement. Checked AFTER the body
+    #    versions so a "to X" reminder still grabs its body.
+    m = RX_REMIND_BARE.search(text)
+    if m:
+        seconds = _seconds_from(m.group("value"), m.group("unit"))
+        if seconds <= 0:
+            return "I'll need a valid duration, sir."
+        if seconds > 86400:
+            return "I can manage a reminder up to twenty-four hours out, sir."
+        sched = get_scheduler()
+        sched.schedule_in(seconds, "Sir, your reminder.")
+        return f"Reminder set for {_human_duration(seconds)}, sir."
+
+    # 5. Timers — try both word orderings.
     m = RX_TIMER_NUM_AFTER.search(text) or RX_TIMER_NUM_BEFORE.search(text)
     if m:
         seconds = _seconds_from(m.group("value"), m.group("unit"))

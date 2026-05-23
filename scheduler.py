@@ -83,6 +83,16 @@ class Scheduler:
         """How many items are scheduled (not yet fired)."""
         return len(self._heap)
 
+    def list_pending(self) -> list[tuple[float, str]]:
+        """Return scheduled items as (fire_at_unix_seconds, text), soonest first."""
+        return sorted((p.fire_at, p.text) for p in self._heap)
+
+    def cancel_all(self) -> int:
+        """Drop all pending items. Returns how many were removed."""
+        n = len(self._heap)
+        self._heap.clear()
+        return n
+
     # ---- Internal ----
 
     async def _run(self) -> None:
