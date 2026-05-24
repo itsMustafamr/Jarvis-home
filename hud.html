@@ -9,12 +9,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg-0: #030710;
-    --bg-1: #061021;
-    --primary: #5ee5ff;
-    --primary-dim: rgba(94, 229, 255, 0.5);
-    --primary-faint: rgba(94, 229, 255, 0.12);
-    --accent: #ff7a40;
+    --bg-0: #02060f;
+    --bg-1: #061521;
+    --primary: #5be0ee;
+    --primary-strong: #7ff0ff;
+    --primary-dim: rgba(91, 224, 238, 0.5);
+    --primary-faint: rgba(91, 224, 238, 0.12);
+    --grid: rgba(91, 224, 238, 0.04);
     --danger: #ff5e6e;
     --text: #b8d8e8;
     --text-dim: rgba(184, 216, 232, 0.5);
@@ -34,18 +35,19 @@
 
   body {
     background:
-      radial-gradient(ellipse at center, var(--bg-1) 0%, var(--bg-0) 75%),
-      var(--bg-0);
+      linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 40px 40px,
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 40px 40px,
+      radial-gradient(ellipse at 35% 50%, var(--bg-1) 0%, var(--bg-0) 70%);
     position: relative;
   }
 
-  /* Subtle scanline texture */
+  /* Scanline overlay */
   body::after {
     content: '';
     position: absolute; inset: 0;
     background: repeating-linear-gradient(
-      0deg, transparent 0px, transparent 3px,
-      rgba(94, 229, 255, 0.015) 3px, rgba(94, 229, 255, 0.015) 4px
+      0deg, transparent 0 3px,
+      rgba(91, 224, 238, 0.012) 3px 4px
     );
     pointer-events: none;
     z-index: 1;
@@ -63,7 +65,7 @@
   .corner-bl { bottom: 20px; left: 20px; border-right: 0; border-top: 0; }
   .corner-br { bottom: 20px; right: 20px; border-left: 0; border-top: 0; }
 
-  /* Top HUD strip */
+  /* Top strip */
   .hud-top {
     position: absolute;
     top: 28px; left: 92px; right: 92px;
@@ -75,7 +77,7 @@
   .hud-top .group { display: flex; gap: 24px; }
   .hud-top .label-key { color: var(--text-dim); margin-right: 6px; }
 
-  /* Main orb stage */
+  /* Main stage */
   .stage {
     width: 100%; height: 100%;
     display: flex; align-items: center; justify-content: center;
@@ -83,151 +85,201 @@
     z-index: 2;
   }
 
-  .orb {
-    width: min(70vmin, 580px);
-    height: min(70vmin, 580px);
+  .display-svg {
+    width: min(94vw, 1500px);
+    height: auto;
+    aspect-ratio: 2 / 1;
+    max-height: 78vh;
     display: block;
   }
 
-  .orb circle, .orb line, .orb path { fill: none; }
+  /* All SVG strokes default to fill: none */
+  .display-svg circle,
+  .display-svg line,
+  .display-svg path,
+  .display-svg polygon { fill: none; }
 
-  .ring-outer  { stroke: var(--primary-dim); stroke-width: 0.5; }
-  .ring-mid    { stroke: var(--primary); stroke-width: 0.8; opacity: 0.7; }
-  .ring-inner  { stroke: var(--primary); stroke-width: 0.4; opacity: 0.45; }
-
+  /* Rings */
+  .ring-outer {
+    stroke: var(--primary); stroke-width: 1.2; opacity: 0.85;
+    stroke-dasharray: 200 30 100 26;
+  }
+  .ring-mid {
+    stroke: var(--primary); stroke-width: 1; opacity: 0.6;
+    stroke-dasharray: 90 18 30 18 60 18;
+  }
+  .ring-thin {
+    stroke: var(--primary-dim); stroke-width: 0.6;
+  }
   .ring-dashed {
-    stroke: var(--primary); stroke-width: 1;
-    stroke-dasharray: 7 5;
+    stroke: var(--primary-strong); stroke-width: 1.2;
+    stroke-dasharray: 8 6;
     opacity: 0;
-    transform-origin: center;
     transition: opacity 0.4s;
   }
 
-  .compass-mark { stroke: var(--primary-dim); stroke-width: 0.5; }
-  .compass-mark.major { stroke: var(--primary); stroke-width: 1; opacity: 0.9; }
+  /* Compass tick marks */
+  .compass-mark { stroke: var(--primary-dim); stroke-width: 0.6; }
+  .compass-mark.major { stroke: var(--primary); stroke-width: 1.2; opacity: 0.9; }
   .compass-text {
     fill: var(--text-dim);
     font-family: 'JetBrains Mono', monospace;
-    font-size: 6px;
+    font-size: 9px;
     text-anchor: middle;
   }
 
+  /* Core: outer glowing ring around a darker interior, so the glowing
+     JARVIS text can read clearly against it (matches the reference). */
   .core {
-    fill: var(--primary-faint);
+    fill: rgba(91, 224, 238, 0.05);
     stroke: var(--primary);
-    stroke-width: 1.5;
-    filter: drop-shadow(0 0 8px var(--primary-dim));
+    stroke-width: 1.8;
+    filter: drop-shadow(0 0 14px var(--primary));
     transform-origin: center;
     transform-box: fill-box;
     transition: filter 0.3s, fill 0.3s, stroke 0.3s;
   }
-
   .core-inner {
-    fill: var(--primary);
-    opacity: 0.85;
-    filter: drop-shadow(0 0 6px var(--primary));
+    fill: none;
+    stroke: rgba(91, 224, 238, 0.28);
+    stroke-width: 0.6;
     transform-origin: center;
     transform-box: fill-box;
-    transition: fill 0.3s;
+  }
+  /* Tiny bright pip just below the text — a subtle focal point */
+  .core-pip {
+    fill: var(--primary-strong);
+    filter: drop-shadow(0 0 6px var(--primary));
   }
 
+  /* J.A.R.V.I.S label — bright cyan with a layered glow halo */
   .label {
     font-family: 'Orbitron', sans-serif;
-    font-weight: 700;
-    letter-spacing: 0.42em;
-    fill: var(--bg-0);
-    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    fill: var(--primary-strong);
+    font-size: 17px;
     text-anchor: middle;
-    paint-order: stroke;
-    stroke: rgba(0, 0, 0, 0.4);
-    stroke-width: 0.5;
+    filter:
+      drop-shadow(0 0 3px var(--primary))
+      drop-shadow(0 0 8px rgba(91, 224, 238, 0.7))
+      drop-shadow(0 0 16px rgba(91, 224, 238, 0.35));
+    transition: filter 0.3s, opacity 0.3s;
   }
 
-  .amp-bar {
-    stroke: var(--primary); stroke-width: 1.8; stroke-linecap: round;
-    opacity: 0;
+  /* Triangle pointer at 3 o'clock */
+  .pointer {
+    stroke: var(--primary); stroke-width: 1.2;
     transform-origin: center;
+  }
+
+  /* Left bracket */
+  .bracket-line { stroke: var(--primary); stroke-width: 1.2; }
+  .bracket-tick { stroke: var(--primary-dim); stroke-width: 0.8; }
+
+  /* Right scope readout — also doubles as the speaking-state amplitude meter */
+  .scope-line {
+    stroke: var(--primary); stroke-width: 1.5; stroke-linecap: round;
+    opacity: 0.45;
+    transform-origin: left center;
     transform-box: fill-box;
     transition: opacity 0.3s;
   }
-
-  /* ============ Animations ============ */
-
-  @keyframes rotate-cw  { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
-  @keyframes rotate-ccw { from { transform: rotate(0deg);} to { transform: rotate(-360deg);} }
-
-  @keyframes pulse-slow {
-    0%, 100% { transform: scale(1);    opacity: 0.55; }
-    50%      { transform: scale(1.08); opacity: 1; }
-  }
-  @keyframes pulse-fast {
-    0%, 100% { transform: scale(1);    opacity: 0.85; }
-    50%      { transform: scale(1.16); opacity: 1; }
-  }
-  @keyframes pulse-think {
-    0%, 100% { transform: scale(0.92); opacity: 0.35; }
-    50%      { transform: scale(1.04); opacity: 0.65; }
-  }
-  @keyframes amp-pulse {
-    0%, 100% { transform: scaleY(0.25); opacity: 0.45; }
-    50%      { transform: scaleY(1);    opacity: 1; }
+  .scope-label {
+    fill: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    text-anchor: start;
+    letter-spacing: 0.1em;
   }
 
-  /* Persistent rotations */
-  .compass-group     { transform-origin: center; animation: rotate-cw  120s linear infinite; }
-  .ring-outer-group  { transform-origin: center; animation: rotate-ccw  80s linear infinite; }
-  .ring-mid-group    { transform-origin: center; animation: rotate-cw   50s linear infinite; }
+  /* =================== Animations =================== */
 
-  /* ----- IDLE ----- */
+  @keyframes rotcw  { from { transform: rotate(0deg);}  to { transform: rotate(360deg);} }
+  @keyframes rotccw { from { transform: rotate(0deg);}  to { transform: rotate(-360deg);} }
+  @keyframes pulse-slow { 0%,100% { transform: scale(1);    opacity: 0.6; } 50% { transform: scale(1.06); opacity: 1; } }
+  @keyframes pulse-fast { 0%,100% { transform: scale(1);    opacity: 0.9; } 50% { transform: scale(1.15); opacity: 1; } }
+  @keyframes pulse-think{ 0%,100% { transform: scale(0.92); opacity: 0.4; } 50% { transform: scale(1.05); opacity: 0.7; } }
+  @keyframes scope-pulse{ 0%,100% { transform: scaleX(0.35);} 50% { transform: scaleX(1);} }
+  @keyframes pointer-spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
+
+  .compass-group   { transform-origin: 300px 250px; animation: rotcw  140s linear infinite; }
+  .ring-outer-grp  { transform-origin: 300px 250px; animation: rotccw 110s linear infinite; }
+  .ring-mid-grp    { transform-origin: 300px 250px; animation: rotcw   75s linear infinite; }
+
+  /* IDLE */
   [data-state="idle"] .core,
   [data-state="idle"] .core-inner {
     animation: pulse-slow 4s ease-in-out infinite;
   }
+  [data-state="idle"] .scope-line { opacity: 0.35; }
 
-  /* ----- LISTENING ----- */
+  /* LISTENING */
   [data-state="listening"] .core,
   [data-state="listening"] .core-inner {
-    animation: pulse-fast 0.9s ease-in-out infinite;
+    animation: pulse-fast 0.85s ease-in-out infinite;
   }
-  [data-state="listening"] .core {
-    filter: drop-shadow(0 0 18px var(--primary));
+  [data-state="listening"] .core { filter: drop-shadow(0 0 22px var(--primary-strong)); }
+  [data-state="listening"] .label {
+    filter:
+      drop-shadow(0 0 5px var(--primary-strong))
+      drop-shadow(0 0 12px rgba(91, 224, 238, 0.85))
+      drop-shadow(0 0 20px rgba(91, 224, 238, 0.45));
   }
+  [data-state="listening"] .scope-line { opacity: 0.7; }
 
-  /* ----- THINKING ----- */
+  /* THINKING */
   [data-state="thinking"] .ring-dashed {
     opacity: 1;
-    animation: rotate-cw 3.5s linear infinite;
+    transform-origin: 300px 250px;
+    animation: rotcw 3.2s linear infinite;
   }
   [data-state="thinking"] .core,
   [data-state="thinking"] .core-inner {
     animation: pulse-think 1.4s ease-in-out infinite;
   }
+  [data-state="thinking"] .label {
+    opacity: 0.7;
+    filter:
+      drop-shadow(0 0 2px var(--primary))
+      drop-shadow(0 0 6px rgba(91, 224, 238, 0.4));
+  }
 
-  /* ----- SPEAKING ----- */
-  [data-state="speaking"] .amp-bar {
+  /* SPEAKING — scope readout becomes amplitude meter, label glows hardest */
+  [data-state="speaking"] .scope-line {
     opacity: 1;
-    animation: amp-pulse var(--amp-duration, 0.6s) ease-in-out infinite;
-    animation-delay: var(--amp-delay, 0s);
+    animation: scope-pulse var(--dur, 0.5s) ease-in-out infinite;
+    animation-delay: var(--delay, 0s);
   }
-  [data-state="speaking"] .core {
-    filter: drop-shadow(0 0 22px var(--primary));
-  }
+  [data-state="speaking"] .core { filter: drop-shadow(0 0 28px var(--primary-strong)); }
   [data-state="speaking"] .core,
   [data-state="speaking"] .core-inner {
-    animation: pulse-fast 1.6s ease-in-out infinite;
+    animation: pulse-fast 1.4s ease-in-out infinite;
+  }
+  [data-state="speaking"] .label {
+    filter:
+      drop-shadow(0 0 6px var(--primary-strong))
+      drop-shadow(0 0 14px rgba(91, 224, 238, 0.9))
+      drop-shadow(0 0 24px rgba(91, 224, 238, 0.5));
   }
 
-  /* ----- ERROR ----- */
+  /* ERROR */
   [data-state="error"] .core {
-    fill: rgba(255, 94, 110, 0.25);
+    fill: rgba(255, 94, 110, 0.06);
     stroke: var(--danger);
-    filter: drop-shadow(0 0 14px var(--danger));
-    animation: pulse-fast 0.6s ease-in-out infinite;
+    filter: drop-shadow(0 0 16px var(--danger));
+    animation: pulse-fast 0.55s ease-in-out infinite;
   }
-  [data-state="error"] .core-inner { fill: var(--danger); }
-  [data-state="error"] .label { stroke: var(--danger); }
+  [data-state="error"] .core-inner { stroke: rgba(255, 94, 110, 0.3); }
+  [data-state="error"] .label {
+    fill: #ff9098;
+    filter:
+      drop-shadow(0 0 4px var(--danger))
+      drop-shadow(0 0 10px rgba(255, 94, 110, 0.7));
+  }
+  [data-state="error"] .core-pip { fill: var(--danger); }
 
-  /* ============ Bottom HUD strip ============ */
+  /* Bottom strip */
   .hud-bottom {
     position: absolute;
     bottom: 28px; left: 92px; right: 92px;
@@ -245,8 +297,7 @@
   }
   .caption {
     font-family: 'Orbitron', sans-serif;
-    font-size: 15px; font-weight: 400;
-    letter-spacing: 0.14em;
+    font-size: 15px; font-weight: 400; letter-spacing: 0.14em;
     color: var(--text);
     min-height: 1.6em;
     text-align: center;
@@ -254,11 +305,10 @@
     transition: opacity 0.3s;
   }
 
-  /* ============ Dev panel ============ */
+  /* Dev panel */
   .dev-panel {
     position: absolute;
-    bottom: 90px; left: 50%;
-    transform: translateX(-50%);
+    bottom: 90px; left: 50%; transform: translateX(-50%);
     display: flex; gap: 6px;
     z-index: 10;
     opacity: 0.55;
@@ -272,9 +322,7 @@
     color: var(--primary);
     padding: 6px 12px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 9px;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
+    font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase;
     cursor: pointer;
     transition: all 0.15s;
   }
@@ -308,27 +356,64 @@
   </div>
 
   <div class="stage">
-    <svg class="orb" viewBox="-100 -100 200 200">
+    <!--
+      Single SVG canvas, 1000x500 viewBox.
+      Orb is anchored at (300, 250) — left-of-center on purpose.
+      Right half (x > 500) is reserved for future content panels
+      (map, dashboard, etc.) in later phases.
+    -->
+    <svg class="display-svg" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid meet">
+
+      <!-- Compass tick ring (rotates, with major ticks every 5) -->
       <g class="compass-group" id="compass-group"></g>
 
-      <g class="ring-outer-group">
-        <circle class="ring-outer" r="85" />
+      <!-- Outer arc-segmented ring (counter-rotates) -->
+      <g class="ring-outer-grp">
+        <circle class="ring-outer" cx="300" cy="250" r="170" />
       </g>
 
-      <circle class="ring-dashed" r="68" />
-
-      <g class="ring-mid-group">
-        <circle class="ring-mid" r="55" />
+      <!-- Mid arc-segmented ring (rotates) -->
+      <g class="ring-mid-grp">
+        <circle class="ring-mid" cx="300" cy="250" r="140" />
       </g>
 
-      <circle class="ring-inner" r="44" />
+      <!-- Dashed thinking ring (visible only in thinking state) -->
+      <circle class="ring-dashed" cx="300" cy="250" r="115" />
 
-      <g id="amp-bars"></g>
+      <!-- Thin static inner ring -->
+      <circle class="ring-thin" cx="300" cy="250" r="98" />
+      <circle class="ring-thin" cx="300" cy="250" r="82" />
 
-      <circle class="core" r="34" />
-      <circle class="core-inner" r="26" />
+      <!-- Core: outer glowing ring + subtle inner ring (mostly hollow
+           so the glowing JARVIS text reads clearly inside) -->
+      <circle class="core" cx="300" cy="250" r="62" />
+      <circle class="core-inner" cx="300" cy="250" r="48" />
 
-      <text class="label" y="3">JARVIS</text>
+      <!-- J.A.R.V.I.S label — bright, glowing -->
+      <text class="label" x="300" y="252">J.A.R.V.I.S</text>
+
+      <!-- Small bright pip just below the text -->
+      <circle class="core-pip" cx="300" cy="268" r="2.2" />
+
+      <!-- Triangle pointer at 3 o'clock (just outside ring-mid) -->
+      <polygon class="pointer" points="470,242 484,250 470,258" />
+      <polygon class="pointer" points="455,245 463,250 455,255" />
+
+      <!-- Left bracket -->
+      <g class="bracket">
+        <line class="bracket-line" x1="120" y1="244" x2="120" y2="256" />
+        <line class="bracket-line" x1="120" y1="244" x2="140" y2="244" />
+        <line class="bracket-line" x1="120" y1="256" x2="140" y2="256" />
+        <line class="bracket-line" x1="140" y1="250" x2="150" y2="250" />
+        <line class="bracket-tick" x1="100" y1="250" x2="120" y2="250" />
+        <line class="bracket-tick" x1="105" y1="240" x2="115" y2="240" />
+        <line class="bracket-tick" x1="105" y1="260" x2="115" y2="260" />
+      </g>
+
+      <!-- Right scope readout: 9 horizontal lines varying in length.
+           Acts as the speaking-state amplitude meter. -->
+      <g class="scope-group" id="scope-group"></g>
+
     </svg>
   </div>
 
@@ -346,60 +431,73 @@
   </div>
 
 <script>
-  // ---- Compass tick marks ----
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const CX = 300, CY = 250;  // orb center
+
+  // ---- Compass ring ----
   (function() {
     const g = document.getElementById('compass-group');
     const N = 60;
+    const rOuter = 188, rTickShort = 192, rTickLong = 198;
     for (let i = 0; i < N; i++) {
       const angle = (i / N) * 360 - 90;
       const rad = angle * Math.PI / 180;
       const isMajor = i % 5 === 0;
-      const r1 = 90, r2 = isMajor ? 96 : 93;
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', (Math.cos(rad) * r1).toFixed(2));
-      line.setAttribute('y1', (Math.sin(rad) * r1).toFixed(2));
-      line.setAttribute('x2', (Math.cos(rad) * r2).toFixed(2));
-      line.setAttribute('y2', (Math.sin(rad) * r2).toFixed(2));
+      const r2 = isMajor ? rTickLong : rTickShort;
+      const x1 = CX + Math.cos(rad) * rOuter;
+      const y1 = CY + Math.sin(rad) * rOuter;
+      const x2 = CX + Math.cos(rad) * r2;
+      const y2 = CY + Math.sin(rad) * r2;
+      const line = document.createElementNS(SVGNS, 'line');
+      line.setAttribute('x1', x1.toFixed(2));
+      line.setAttribute('y1', y1.toFixed(2));
+      line.setAttribute('x2', x2.toFixed(2));
+      line.setAttribute('y2', y2.toFixed(2));
       line.setAttribute('class', isMajor ? 'compass-mark major' : 'compass-mark');
       g.appendChild(line);
     }
-    // N/E/S/W
+    // Cardinal labels
     const cardinals = [['N', -90], ['E', 0], ['S', 90], ['W', 180]];
     cardinals.forEach(([label, deg]) => {
       const rad = deg * Math.PI / 180;
-      const r = 81;
-      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      const r = 180;
+      const txt = document.createElementNS(SVGNS, 'text');
       txt.setAttribute('class', 'compass-text');
-      txt.setAttribute('x', (Math.cos(rad) * r).toFixed(2));
-      txt.setAttribute('y', (Math.sin(rad) * r + 2).toFixed(2));
+      txt.setAttribute('x', (CX + Math.cos(rad) * r).toFixed(2));
+      txt.setAttribute('y', (CY + Math.sin(rad) * r + 3).toFixed(2));
       txt.textContent = label;
       g.appendChild(txt);
     });
   })();
 
-  // ---- Amplitude bars ----
+  // ---- Scope readout (right side, 9 lines) ----
   (function() {
-    const g = document.getElementById('amp-bars');
-    const N = 36;
-    const baseR = 75;
+    const g = document.getElementById('scope-group');
+    const startX = 510;        // just past the right edge of ring-outer
+    const lengths = [80, 64, 92, 56, 104, 48, 88, 72, 60];
+    const N = lengths.length;
+    const spacing = 18;
+    const totalH = (N - 1) * spacing;
+    const startY = CY - totalH / 2;
     for (let i = 0; i < N; i++) {
-      const angle = (i / N) * 360 - 90;
-      const rad = angle * Math.PI / 180;
-      const len = 4 + Math.random() * 7;
-      const x1 = Math.cos(rad) * baseR;
-      const y1 = Math.sin(rad) * baseR;
-      const x2 = Math.cos(rad) * (baseR + len);
-      const y2 = Math.sin(rad) * (baseR + len);
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('class', 'amp-bar');
-      line.setAttribute('x1', x1.toFixed(2));
-      line.setAttribute('y1', y1.toFixed(2));
-      line.setAttribute('x2', x2.toFixed(2));
-      line.setAttribute('y2', y2.toFixed(2));
-      line.style.setProperty('--amp-delay', (Math.random() * 0.6) + 's');
-      line.style.setProperty('--amp-duration', (0.4 + Math.random() * 0.5) + 's');
+      const y = startY + i * spacing;
+      const line = document.createElementNS(SVGNS, 'line');
+      line.setAttribute('class', 'scope-line');
+      line.setAttribute('x1', startX);
+      line.setAttribute('y1', y);
+      line.setAttribute('x2', startX + lengths[i]);
+      line.setAttribute('y2', y);
+      line.style.setProperty('--dur', (0.35 + Math.random() * 0.45) + 's');
+      line.style.setProperty('--delay', (Math.random() * 0.5) + 's');
       g.appendChild(line);
     }
+    // Tiny scope label
+    const t = document.createElementNS(SVGNS, 'text');
+    t.setAttribute('class', 'scope-label');
+    t.setAttribute('x', startX);
+    t.setAttribute('y', startY - 12);
+    t.textContent = 'AMP / dB';
+    g.appendChild(t);
   })();
 
   // ---- State machine ----
@@ -444,7 +542,6 @@
   setInterval(tickClock, 1000);
 
   // ---- Keyboard shortcuts ----
-  // d = toggle dev panel | 1..5 = set state | f = fullscreen
   const KEY_STATE = { '1':'idle', '2':'listening', '3':'thinking', '4':'speaking', '5':'error' };
   document.addEventListener('keydown', (e) => {
     if (e.key === 'd' || e.key === 'D') {
@@ -457,7 +554,7 @@
     }
   });
 
-  // ---- Demo cycle (?demo=1 cycles states automatically) ----
+  // ---- Demo cycle (?demo=1) ----
   if (new URLSearchParams(location.search).get('demo') === '1') {
     const cycle = ['idle', 'listening', 'thinking', 'speaking', 'idle'];
     let i = 0;

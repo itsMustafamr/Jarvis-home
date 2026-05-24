@@ -97,6 +97,32 @@ CONTEXT.md         This file
 
 (Newest first. Dated entries.)
 
+### 2026-05-23 — Phase 1.6: Glowing JARVIS text in the orb center
+**Files modified:** `hud.html`.
+**Reason:** Reference image shows the J.A.R.V.I.S text glowing inside a relatively dark interior. Previous version had the label set to `fill: #02101a` (dark) on top of a bright cyan-filled core — text was invisible.
+**Changes:**
+- `.core` is now mostly hollow (`fill: rgba(91,224,238,0.05)`, `stroke: var(--primary)`) so the interior reads dark with a bright ring at the edge.
+- `.core-inner` is no longer filled — it's a subtle stroked ring inside, giving the impression of layered concentric outlines.
+- `.label` now fills `var(--primary-strong)` (bright cyan) and has a 3-layer `drop-shadow` glow filter (3px / 8px / 16px stacked halos).
+- Label glow state-reacts: dimmer in `thinking`, baseline in `idle`, brighter in `listening`, brightest in `speaking`. Error state turns it pink-red.
+- Small `.core-pip` (r=2.2) added below the text — a subtle focal dot that picks up the bright fill of the original core.
+**Status:** Awaiting user reaction before Phase 2 wiring.
+
+### 2026-05-23 — Phase 1.5: HUD visual revision (asymmetric layout)
+**Files modified:** `hud.html` (single-file rewrite).
+**Reason:** User shared a closer-match reference image showing off-center orb, arc-segmented rings, scope readout on the right, bracket on the left, triangle pointer at 3 o'clock, "J.A.R.V.I.S" text with periods, subtle blueprint-grid background.
+**Changes vs Phase 1:**
+- Single SVG canvas with viewBox `0 0 1000 500` (2:1 aspect). Orb anchored at `(300, 250)` — left-of-center. **Right half is reserved for future content panels** (map / dashboard / news in Phases 3–5).
+- Rings now arc-segmented via `stroke-dasharray`: outer ring uses `200 30 100 26` (3 large + 3 small arcs); mid ring uses a more broken `90 18 30 18 60 18` pattern. Compass tick ring still rotates.
+- Right scope readout (9 horizontal lines, varied lengths) replaces the around-the-rim amplitude bars. Acts as the speaking-state amplitude meter, anchored at left edge with `scaleX` scope-pulse animation.
+- Left bracket: H-bracket plus three tick marks projecting from the orb's 9-o'clock side.
+- Hollow triangle pointer at 3-o'clock (just outside the mid ring).
+- "J.A.R.V.I.S" with periods, Orbitron weight 500 (down from 700) for a slightly lighter feel.
+- Palette shifted to a more teal cyan: `#5be0ee` (was `#5ee5ff`).
+- Body background gains a subtle blueprint grid pattern (`40px` cells) layered under the radial gradient.
+**Same as before:** corner brackets, top/bottom HUD chrome, dev panel, keyboard shortcuts (`D` hide, `1..5` set state, `F` fullscreen), `?demo=1` auto-cycle, `window.HUD` API.
+**Status:** Awaiting user reaction before Phase 2 wiring.
+
 ### 2026-05-23 — Phase 1 of JARVIS HUD: orb shell
 **Files added:** `hud.html` — single self-contained page (~370 lines) served by the existing `python -m http.server 8000` (or `jarvis-http.service` when systemd is on). Pure SVG + CSS animations, no external JS deps; loads Orbitron + JetBrains Mono from Google Fonts.
 **Visuals:**
