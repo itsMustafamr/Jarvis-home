@@ -558,6 +558,42 @@
   }
 
   HUD.setState('idle');
+
+  // ---- Live WebSocket subscription to pipeline state events ----
+  // Subscribes to server.py's HUD channel; reacts to {type:'state', state, caption}
+  // messages forwarded from hud_state.publish() calls in pipeline.py /
+  // local_input.py. Auto-reconnects if the server bounces.
+  // Skip when ?dev=1 — useful for visual tweaking with the local buttons.
+  (function() {
+    if (new URLSearchParams(location.search).get('dev') === '1') return;
+    let ws = null, reconnectTimer = null;
+    function connect() {
+      try {
+        ws = new WebSocket(`ws://${location.hostname}:8765`);
+      } catch (e) {
+        scheduleReconnect();
+        return;
+      }
+      ws.onopen = () => {
+        try { ws.send(JSON.stringify({ type: 'subscribe', channel: 'hud' })); } catch {}
+      };
+      ws.onmessage = (e) => {
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
+        if (msg.type === 'state') {
+          if (msg.state) HUD.setState(msg.state);
+          if (typeof msg.caption === 'string') HUD.setCaption(msg.caption);
+        }
+      };
+      ws.onclose = () => { scheduleReconnect(); };
+      ws.onerror = () => { try { ws.close(); } catch {} };
+    }
+    function scheduleReconnect() {
+      if (reconnectTimer) return;
+      reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, 2000);
+    }
+    connect();
+  })();
 </script>
 </body>
 </html>

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import audio_io
 import pipeline
+import hud_state
 from scheduler import get_scheduler
 from vad import SileroEndpointer
 
@@ -97,13 +98,18 @@ async def announcement_player():
             await asyncio.sleep(ANNOUNCEMENT_WAIT_TICK_S)
 
         log.info(f"ANNOUNCE: {text!r}")
-        with tempfile.TemporaryDirectory() as tmp:
-            out_wav = os.path.join(tmp, "ann.wav")
-            ok = await asyncio.to_thread(pipeline.synthesize, text, out_wav)
-            if not ok:
-                log.error("announcement TTS failed; dropping")
-                continue
-            await asyncio.to_thread(audio_io.play_wav, out_wav)
+        # HUD: scheduled timer/reminder is now speaking.
+        hud_state.publish("speaking", caption=text)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out_wav = os.path.join(tmp, "ann.wav")
+                ok = await asyncio.to_thread(pipeline.synthesize, text, out_wav)
+                if not ok:
+                    log.error("announcement TTS failed; dropping")
+                    continue
+                await asyncio.to_thread(audio_io.play_wav, out_wav)
+        finally:
+            hud_state.publish("idle")
 
 
 async def handle_call_press(endpointer: SileroEndpointer):
@@ -111,37 +117,46 @@ async def handle_call_press(endpointer: SileroEndpointer):
     log.info("=" * 60)
     log.info("CALL BUTTON: starting capture")
 
-    with tempfile.TemporaryDirectory() as tmp:
-        in_wav = os.path.join(tmp, "in.wav")
-        out_wav = os.path.join(tmp, "out.wav")
+    # HUD: button pressed, mic is hot.
+    hud_state.publish("listening")
 
-        def on_vad_state(state):
-            log.debug(f"vad: {state}")
-        state = await asyncio.to_thread(
-            audio_io.capture_until_silence, in_wav, endpointer,
-            audio_io.S3_DEVICE, on_vad_state
-        )
-        if state == "no_speech":
-            log.info("no speech detected; ignoring press")
-            return
-        if state == "timeout":
-            log.info("capture hit timeout (15s); proceeding anyway")
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            in_wav = os.path.join(tmp, "in.wav")
+            out_wav = os.path.join(tmp, "out.wav")
 
-        transcript = await asyncio.to_thread(pipeline.transcribe, in_wav)
-        if not transcript:
-            log.warning("STT returned empty; aborting")
-            return
+            def on_vad_state(state):
+                log.debug(f"vad: {state}")
+            state = await asyncio.to_thread(
+                audio_io.capture_until_silence, in_wav, endpointer,
+                audio_io.S3_DEVICE, on_vad_state
+            )
+            if state == "no_speech":
+                log.info("no speech detected; ignoring press")
+                return
+            if state == "timeout":
+                log.info("capture hit timeout (15s); proceeding anyway")
 
-        reply = await pipeline.route(transcript)
+            transcript = await asyncio.to_thread(pipeline.transcribe, in_wav)
+            if not transcript:
+                log.warning("STT returned empty; aborting")
+                return
 
-        ok = await asyncio.to_thread(pipeline.synthesize, reply, out_wav)
-        if not ok:
-            log.error("TTS failed; aborting")
-            return
+            # pipeline.route() publishes "thinking" at start and
+            # "speaking" with the reply text at end.
+            reply = await pipeline.route(transcript)
 
-        await asyncio.to_thread(audio_io.play_wav, out_wav)
+            ok = await asyncio.to_thread(pipeline.synthesize, reply, out_wav)
+            if not ok:
+                log.error("TTS failed; aborting")
+                return
 
-    log.info(f"cycle complete in {time.time()-t_press:.2f}s")
+            await asyncio.to_thread(audio_io.play_wav, out_wav)
+
+        log.info(f"cycle complete in {time.time()-t_press:.2f}s")
+    finally:
+        # HUD: always return to idle, even if the cycle aborted partway.
+        hud_state.publish("idle")
 
 
 async def hid_event_loop(hidraw_path: str, endpointer: SileroEndpointer):

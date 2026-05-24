@@ -26,11 +26,21 @@ WS_HOST = "0.0.0.0"
 WS_PORT = 8765
 FRAME_REQUEST_TIMEOUT = 15.0  # seconds to wait for browser to send a frame
 
+# HUD bridge: server.py listens on this local UDP port for state events
+# published by hud_state.publish() in any process (local_input.py, pipeline.py,
+# or here in server.py). Each packet is broadcast over WebSocket to every
+# client that subscribed with {"type": "subscribe", "channel": "hud"}.
+HUD_UDP_HOST = "127.0.0.1"
+HUD_UDP_PORT = 8766
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("jarvis")
 
 # Per-connection state for pending frame requests.
 _pending_frames: dict = {}
+
+# All WebSocket clients that have subscribed to HUD state events.
+_hud_subscribers: set = set()
 
 
 async def request_frame(websocket) -> bytes | None:
@@ -103,6 +113,35 @@ async def handle_audio(websocket, audio_bytes: bytes):
         await websocket.send(json.dumps({"type": "status", "msg": "idle"}))
 
 
+async def _broadcast_to_hud(msg: dict) -> None:
+    """Send one JSON payload to every HUD subscriber. Drops dead sockets."""
+    if not _hud_subscribers:
+        return
+    payload = json.dumps(msg)
+    dead = []
+    for ws in list(_hud_subscribers):
+        try:
+            await ws.send(payload)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        _hud_subscribers.discard(ws)
+
+
+class _HudUdpProtocol(asyncio.DatagramProtocol):
+    """Receives UDP packets from hud_state.publish() and forwards them to
+    all WebSocket HUD subscribers."""
+
+    def datagram_received(self, data, addr):
+        try:
+            msg = json.loads(data.decode("utf-8"))
+        except Exception:
+            log.warning(f"bad HUD UDP packet from {addr}: {data[:80]!r}")
+            return
+        # Fire-and-forget broadcast; schedule on the running loop.
+        asyncio.create_task(_broadcast_to_hud(msg))
+
+
 async def handler(websocket):
     log.info(f"client connected from {websocket.remote_address}")
     try:
@@ -115,18 +154,28 @@ async def handler(websocket):
                 except json.JSONDecodeError:
                     log.warning(f"non-JSON text message ignored: {message[:100]}")
                     continue
-                if msg.get("type") == "frame":
+                msg_type = msg.get("type")
+                if msg_type == "frame":
                     fut = _pending_frames.get(id(websocket))
                     if fut and not fut.done():
                         fut.set_result(msg)
                     else:
                         log.warning("frame received but no pending request")
+                elif msg_type == "subscribe" and msg.get("channel") == "hud":
+                    _hud_subscribers.add(websocket)
+                    log.info(f"HUD subscriber added (total: {len(_hud_subscribers)})")
+                    # Send the current state so the freshly-connected HUD
+                    # doesn't sit blank waiting for the next event.
+                    await websocket.send(json.dumps({"type": "state", "state": "idle"}))
                 else:
-                    log.info(f"unhandled text message: {msg.get('type')}")
+                    log.info(f"unhandled text message: {msg_type}")
     except websockets.ConnectionClosed:
         log.info("client disconnected")
     finally:
         _pending_frames.pop(id(websocket), None)
+        if websocket in _hud_subscribers:
+            _hud_subscribers.discard(websocket)
+            log.info(f"HUD subscriber removed (total: {len(_hud_subscribers)})")
 
 
 async def main():
@@ -137,6 +186,15 @@ async def main():
     log.info(f"  lights:  WiZ at {lights.WIZ_IP}:{lights.WIZ_PORT}")
     log.info(f"  weather: Open-Meteo (default city: {weather.DEFAULT_CITY})")
     log.info(f"  vision:  YOLO11n loaded")
+
+    # HUD UDP listener: receives state events from any process in the system.
+    loop = asyncio.get_running_loop()
+    await loop.create_datagram_endpoint(
+        lambda: _HudUdpProtocol(),
+        local_addr=(HUD_UDP_HOST, HUD_UDP_PORT),
+    )
+    log.info(f"  HUD bridge: listening on udp://{HUD_UDP_HOST}:{HUD_UDP_PORT}")
+
     async with websockets.serve(handler, WS_HOST, WS_PORT, max_size=10_000_000):
         await asyncio.Future()
 

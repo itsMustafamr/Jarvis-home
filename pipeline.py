@@ -18,6 +18,7 @@ import weather
 import vision
 import memory
 import time_intent
+import hud_state
 from vision_intent import is_vision_intent
 
 # ---- Config (mirrors server.py) ----
@@ -183,12 +184,16 @@ async def route(transcript: str, frame_provider=None, record_turn: bool = True) 
         record_turn: if True (default), append this (user, jarvis) exchange to
                      persistent memory so later replies can refer back to it.
     """
+    # HUD: we've got a transcript and we're about to decide what to do.
+    hud_state.publish("thinking")
     reply = await _route_inner(transcript, frame_provider)
     if record_turn:
         try:
             memory.add_turn(transcript, reply)
         except Exception:
             log.exception("could not record turn in memory")
+    # HUD: reply text is ready; about to synthesize and play.
+    hud_state.publish("speaking", caption=reply)
     return reply
 
 

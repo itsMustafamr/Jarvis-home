@@ -76,6 +76,8 @@ vision_intent.py   "what do you see" regex matcher
 audio_io.py        ALSA arecord/aplay wrappers for the S3
 vad.py             Silero VAD endpointer
 prompts.py         (reference only — live prompt is in pipeline.call_llama)
+hud_state.py       UDP publisher for HUD state transitions (Phase 2)
+hud.html           JARVIS HUD: orb + state animations + WS subscription
 index.html         Browser push-to-talk frontend
 systemd/           Four unit files + udev rule + install.sh
 SETUP.md           One-time install on a fresh Jetson
@@ -96,6 +98,17 @@ CONTEXT.md         This file
 ## Recent work
 
 (Newest first. Dated entries.)
+
+### 2026-05-24 — Phase 2: HUD wired to live pipeline state
+**Files added:** `hud_state.py` — fire-and-forget UDP publisher on `127.0.0.1:8766` with one function `publish(state, caption=None)`. Silent if no listener (HUD is never load-bearing).
+**Files modified:**
+- `pipeline.py` — `route()` publishes `thinking` at start and `speaking` (with the reply text as caption) at end. Applies to both Anker and browser paths since both call `pipeline.route()`.
+- `local_input.py` — `handle_call_press()` publishes `listening` at the very top and `idle` in a `finally:` block so HUD always returns to idle even when STT yields no speech. `announcement_player()` also publishes `speaking` (with the announcement text) when a scheduled timer / reminder fires, and `idle` when it finishes.
+- `server.py` — listens on `127.0.0.1:8766` via `asyncio.DatagramProtocol`. Tracks `_hud_subscribers` set. Clients subscribe by sending `{"type":"subscribe","channel":"hud"}` over the existing WebSocket on `8765`. UDP packets are forwarded to all subscribers as `{"type":"state","state":...,"caption":...}` JSON. Dead sockets dropped on the next broadcast.
+- `hud.html` — opens `ws://${location.hostname}:8765`, sends the subscribe message on connect, handles `{type:'state'}` messages by calling `HUD.setState(state)` and `HUD.setCaption(caption)`. Auto-reconnects with a 2s timer when the WS bounces. Disabled if the URL has `?dev=1` so the dev panel buttons stay isolated for visual tweaking.
+**Showcase requirement:** For the HUD to react to Anker button presses, **both** `jarvis-local` AND `jarvis-server` must be running on the Jetson. The hardware audio path still works without `jarvis-server` — only the HUD bridge requires it.
+**Verified locally:** Sandbox UDP→WebSocket round-trip test confirms 4 state events publish, get received by the UDP listener, and broadcast to a fake subscriber with captions preserved.
+**Status:** Awaiting Anker test on Jetson.
 
 ### 2026-05-23 — Phase 1.7: Re-center orb + restore rim amplitude bars
 **Files modified:** `hud.html`.
