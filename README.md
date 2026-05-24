@@ -3,7 +3,7 @@
 A fully local voice assistant running on an NVIDIA Jetson Orin Nano Super 8GB. Press the call button on a USB speakerphone or push-to-talk in a browser, and a British butler replies. STT, LLM, TTS, vision, smart-light control — all on-device. Zero cloud APIs.
 
 <p align="center">
-  <img src="https://miro.medium.com/1*2QlX10Yrh7qBcfzmLSv4Fg.gif" width="700" alt="Jarvis home assistant demo">
+  <img src="files/Jarvis_v1.gif" width="700" alt="Jarvis home assistant demo">
 </p>
 
 **Stack:** Gemma 4 E2B (LLM) · whisper.cpp (STT) · Piper Alba en_GB (TTS) · YOLO11n (vision) · Silero VAD · Python WebSocket server · ALSA + HID daemon for the hardware path.
