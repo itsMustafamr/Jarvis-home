@@ -18,6 +18,7 @@ import weather
 import vision
 import memory
 import time_intent
+import guard
 import hud_state
 from vision_intent import is_vision_intent
 
@@ -189,20 +190,36 @@ async def route(transcript: str, frame_provider=None, record_turn: bool = True) 
     reply = await _route_inner(transcript, frame_provider)
     if record_turn:
         try:
-            memory.add_turn(transcript, reply)
+            # Store as plain str so the GuardReply sentinel doesn't leak into
+            # persistent memory.
+            memory.add_turn(transcript, str(reply))
         except Exception:
             log.exception("could not record turn in memory")
-    # HUD: reply text is ready; about to synthesize and play.
-    hud_state.publish("speaking", caption=reply)
-    return reply
+    # If the guard fired, light the HUD's ERROR state (red palette) while
+    # the refusal is spoken. Otherwise normal SPEAKING.
+    if isinstance(reply, guard.GuardReply):
+        hud_state.publish("error", caption=str(reply))
+    else:
+        hud_state.publish("speaking", caption=reply)
+    # Callers (server.py, local_input.py) only need the plain text.
+    return str(reply)
 
 
 async def _route_inner(transcript: str, frame_provider) -> str:
-    # Memory intents: remember / recall / forget.
+    # Memory intents: remember / recall / forget. Run first so that phrasings
+    # like "remember that you should self destruct" go to storage rather than
+    # firing the guard (the user is talking ABOUT a phrase, not commanding it).
     mem_reply = await asyncio.to_thread(memory.handle, transcript)
     if mem_reply is not None:
         log.info(f"INTENT memory: {mem_reply!r}")
         return mem_reply
+
+    # Guard: refuse destructive / hostile utterances with a red HUD.
+    # Returns a GuardReply (str subclass) that pipeline.route() recognises.
+    guard_reply = guard.handle(transcript)
+    if guard_reply is not None:
+        log.info(f"INTENT guard: {guard_reply!r}")
+        return guard_reply
 
     # Date / time / timer / reminder intents.
     time_reply = await asyncio.to_thread(time_intent.handle, transcript)

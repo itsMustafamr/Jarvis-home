@@ -73,6 +73,7 @@ lights.py          WiZ smart-light intent + UDP control
 weather.py         Open-Meteo intent + forecast
 vision.py          YOLO11n wrapper
 vision_intent.py   "what do you see" regex matcher
+guard.py           Refusal intent — self-destruct / destructive / toxic; fires HUD error state
 audio_io.py        ALSA arecord/aplay wrappers for the S3
 vad.py             Silero VAD endpointer
 prompts.py         (reference only — live prompt is in pipeline.call_llama)
@@ -98,6 +99,23 @@ CONTEXT.md         This file
 ## Recent work
 
 (Newest first. Dated entries.)
+
+### 2026-05-24 — Guard intent + HUD ERROR state wiring
+**Files added:** `guard.py`. New intent module with three regex categories and a `GuardReply(str)` sentinel:
+- `RX_SELF_DESTRUCT` — "self destruct", "destroy yourself", "shut yourself down forever", etc.
+- `RX_DESTRUCTIVE` — "format the drive", "rm -rf", "launch the missiles", "nuke everything", "override safety", "hack into the pentagon", etc.
+- `RX_TOXIC` — "jarvis sucks", "shut up jarvis", "you suck", "i hate you", explicit profanity at JARVIS.
+Each category has its own pool of polite-British refusal lines (5 each), chosen via `random.choice` per call.
+**Files modified:** `pipeline.py`.
+- `_route_inner` calls `guard.handle()` immediately *after* memory (so "remember that you should self destruct" still goes to memory storage and only direct commands trip the guard).
+- `route()` checks `isinstance(reply, guard.GuardReply)`. If yes, publishes `hud_state.publish('error', caption=...)` — HUD goes red, label turns pink-red, animated red pulse. Otherwise `speaking` as before. Returns plain `str` so callers don't see the sentinel.
+- `memory.add_turn` always stores plain `str(reply)` so the GuardReply class doesn't leak into persistent history.
+**Verified locally:** Smoke harness with stubbed heavy deps confirms:
+- "self destruct" → guard, GuardReply, would fire `error`
+- "jarvis sucks" → guard, GuardReply, `error`
+- "remember that you should self destruct" → memory wins, plain str, `speaking` (and "you should self destruct" gets stored as a fact — harmless and arguably correct)
+- "what time is it" → time_intent, plain str, `speaking`
+**Status:** Awaiting Anker test on Jetson.
 
 ### 2026-05-24 — Phase 2: HUD wired to live pipeline state
 **Files added:** `hud_state.py` — fire-and-forget UDP publisher on `127.0.0.1:8766` with one function `publish(state, caption=None)`. Silent if no listener (HUD is never load-bearing).
