@@ -161,8 +161,7 @@ def get_prompt_context() -> tuple[str, list[tuple[str, str]]]:
 
 # ---- Intent ----
 
-# "remember that I'm allergic to peanuts", "make a note that the wifi password is X",
-# "note that I take pills at 8am", "note down that ..."
+# Prefix form: "Remember that X" / "Make a note that X" / "Note down that X"
 RX_REMEMBER = re.compile(
     r"\b(?:remember\s+(?:that\s+)?"
     r"|make\s+a\s+note\s+(?:that\s+|of\s+)?"
@@ -170,6 +169,28 @@ RX_REMEMBER = re.compile(
     r"(?P<content>.+)",
     re.IGNORECASE,
 )
+
+# Postfix form: "[fact]. Remember that." / "I like coffee, remember that."
+# / "[fact]. Note that." / "[fact]. Make a note of that."
+# Captures the content BEFORE the trailing tag. Checked before RX_REMEMBER
+# so it wins when both could match.
+#
+# The leading negative lookahead skips interrogative phrasings — without it,
+# "Can you remember that?" would capture "Can you" as a fact.
+RX_REMEMBER_POSTFIX = re.compile(
+    r"^(?!(?:can|could|would|will|should|do|did|are|were|have|has|may|might)\s+you\b)"
+    r"(?P<content>.+?)"
+    r"\s+(?:remember|note|make\s+a\s+note\s+of)\s+(?:that|this)\s*$",
+    re.IGNORECASE,
+)
+
+# Single-word / pronoun captures that are useless as a stored fact.
+# When the regex captures one of these, we ask the user to repeat instead
+# of polluting the database with "that".
+_USELESS_CONTENT = {
+    "that", "this", "it", "those", "these", "them", "stuff", "things",
+    "the thing", "the things",
+}
 
 # Recall phrasings:
 #   "what do you know / remember about me"
@@ -200,35 +221,47 @@ RX_FORGET = re.compile(
 )
 
 
+# (prefix, replacement) for first-person -> third-person rewrite. Checked in
+# order, first match wins. Longer / more specific prefixes appear first so
+# "I don't like X" wins over "I X" if a future verb starts with "don't".
+_FIRST_PERSON_REWRITES = [
+    ("i don't like ",  "the user doesn't like "),
+    ("i do not like ", "the user does not like "),
+    ("i'm ",           "the user is "),
+    ("i've ",          "the user has "),
+    ("i am ",          "the user is "),
+    ("i have ",        "the user has "),
+    ("i like ",        "the user likes "),
+    ("i love ",        "the user loves "),
+    ("i hate ",        "the user hates "),
+    ("i prefer ",      "the user prefers "),
+    ("i want ",        "the user wants "),
+    ("i need ",        "the user needs "),
+    ("i take ",        "the user takes "),
+    ("i drink ",       "the user drinks "),
+    ("i eat ",         "the user eats "),
+    ("i work ",        "the user works "),
+    ("i live ",        "the user lives "),
+    ("i go ",          "the user goes "),
+    ("my ",            "the user's "),
+]
+
+
 def _normalize_for_storage(text: str) -> str:
-    """Rewrite first-person facts to third-person so the stored entry reads naturally
-    when surfaced back into the prompt.
+    """Rewrite first-person facts to third-person so the stored entry reads
+    naturally when surfaced back into the prompt.
 
       'I am allergic to peanuts'   -> 'the user is allergic to peanuts'
+      'I prefer Earl Grey'         -> 'the user prefers Earl Grey'
       'My birthday is in March'    -> "the user's birthday is in March"
 
     Best-effort; leaves unrecognised phrasing untouched.
     """
     t = text.strip()
     low = t.lower()
-    if low.startswith("i am "):
-        return "the user is " + t[5:]
-    if low.startswith("i'm "):
-        return "the user is " + t[4:]
-    if low.startswith("i have "):
-        return "the user has " + t[7:]
-    if low.startswith("i've "):
-        return "the user has " + t[5:]
-    if low.startswith("i like "):
-        return "the user likes " + t[7:]
-    if low.startswith("i love "):
-        return "the user loves " + t[7:]
-    if low.startswith("i don't like "):
-        return "the user doesn't like " + t[13:]
-    if low.startswith("i hate "):
-        return "the user hates " + t[7:]
-    if low.startswith("my "):
-        return "the user's " + t[3:]
+    for prefix, replacement in _FIRST_PERSON_REWRITES:
+        if low.startswith(prefix):
+            return replacement + t[len(prefix):]
     return t
 
 
@@ -242,24 +275,46 @@ def _strip_intent_punct(text: str) -> str:
     return text
 
 
+# Catches "Can you / Could you / Did you / Would you / etc." at the start of
+# the utterance. We need this so that "Could you remember that for me?" does
+# NOT get parsed as remember("for me") — the auxiliary phrasing means the user
+# is asking Jarvis to act on something earlier in the conversation, not stating
+# a new fact.
+INTERROGATIVE_AUX_RX = re.compile(
+    r"^(?:can|could|would|will|should|do|did|are|were|have|has|may|might)\s+you\s+",
+    re.IGNORECASE,
+)
+
+
 def is_memory_intent(text: str) -> bool:
     text = _strip_intent_punct(text)
     return bool(
-        RX_REMEMBER.search(text) or RX_RECALL.search(text) or RX_FORGET.search(text)
+        RX_REMEMBER_POSTFIX.search(text)
+        or RX_REMEMBER.search(text)
+        or RX_RECALL.search(text)
+        or RX_FORGET.search(text)
     )
+
+
+def _store_content(raw_content: str) -> str:
+    """Shared path for both remember-prefix and remember-postfix matches.
+    Returns the reply string."""
+    content = raw_content.strip().rstrip(".!?,;:")
+    if not content or content.lower() in _USELESS_CONTENT:
+        # Don't store "that" / "this" / "it" — they don't carry meaning on their own.
+        return "Remember what, sir?"
+    normalized = _normalize_for_storage(content)
+    added = add_fact(normalized)
+    return "Noted, sir." if added else "I had that already, sir."
 
 
 def handle(text: str) -> Optional[str]:
     """Try to handle a memory intent. Returns reply string if handled, else None."""
     text = _strip_intent_punct(text)
-    m = RX_FORGET.search(text)
-    if m:
-        query = m.group("query").strip().rstrip(".!?,;:")
-        n = forget_fact(query)
-        if n == 0:
-            return "I don't have anything matching, sir."
-        return "Forgotten, sir." if n == 1 else f"Forgotten {n} entries, sir."
 
+    # Recall is checked first — its patterns ("do you know about me",
+    # "tell me what you remember") are interrogative, so they have to win
+    # before the auxiliary-question filter below short-circuits them.
     m = RX_RECALL.search(text)
     if m:
         facts = get_facts()
@@ -270,14 +325,34 @@ def handle(text: str) -> Optional[str]:
         # Keep it as one sentence per the JARVIS persona.
         return "You've told me: " + "; ".join(facts) + ", sir."
 
+    # If the utterance starts with an auxiliary-question ("Could you...",
+    # "Did you...", "Can you...") AND it contains a remember/note keyword,
+    # the user is asking Jarvis to act on something earlier, not stating a
+    # new fact. Without this guard, "Could you remember that for me?" gets
+    # parsed as remember("for me").
+    if INTERROGATIVE_AUX_RX.match(text) and re.search(
+        r"\b(?:remember|note)\b", text, re.IGNORECASE
+    ):
+        return "Remember what, sir?"
+
+    m = RX_FORGET.search(text)
+    if m:
+        query = m.group("query").strip().rstrip(".!?,;:")
+        n = forget_fact(query)
+        if n == 0:
+            return "I don't have anything matching, sir."
+        return "Forgotten, sir." if n == 1 else f"Forgotten {n} entries, sir."
+
+    # Postfix form FIRST so "I like coffee, remember that" captures
+    # "I like coffee" instead of falling into RX_REMEMBER (which would
+    # capture just "that" and then be rejected by _USELESS_CONTENT).
+    m = RX_REMEMBER_POSTFIX.search(text)
+    if m:
+        return _store_content(m.group("content"))
+
     m = RX_REMEMBER.search(text)
     if m:
-        content = m.group("content").strip().rstrip(".!?,;:")
-        if not content:
-            return "Remember what, sir?"
-        normalized = _normalize_for_storage(content)
-        added = add_fact(normalized)
-        return "Noted, sir." if added else "I had that already, sir."
+        return _store_content(m.group("content"))
 
     return None
 

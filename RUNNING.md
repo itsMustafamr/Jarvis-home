@@ -109,6 +109,8 @@ The page needs HTTPS or `localhost` to get mic permission. Cheapest fix: SSH tun
 # From your Mac, laptop, etc:
 ssh -L 8000:localhost:8000 -L 8765:localhost:8765 flash@<jetson-ip>
 # then open http://localhost:8000 in the browser
+
+jetson-ip = flash@10.0.0.188 or flash@10.0.0.187 mostly.
 ```
 
 For phone access without an SSH tunnel, use Tailscale + `tailscale cert` to get a real `*.ts.net` HTTPS cert, then put Caddy or nginx in front of 8000 and 8765 as a TLS reverse proxy.
