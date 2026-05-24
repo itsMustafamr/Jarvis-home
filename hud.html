@@ -177,20 +177,14 @@
   .bracket-line { stroke: var(--primary); stroke-width: 1.2; }
   .bracket-tick { stroke: var(--primary-dim); stroke-width: 0.8; }
 
-  /* Right scope readout — also doubles as the speaking-state amplitude meter */
-  .scope-line {
-    stroke: var(--primary); stroke-width: 1.5; stroke-linecap: round;
-    opacity: 0.45;
-    transform-origin: left center;
+  /* Amplitude bars around the orb's rim — v1-style radial bars that
+     pulse outward in the speaking state. */
+  .amp-bar {
+    stroke: var(--primary); stroke-width: 2.2; stroke-linecap: round;
+    opacity: 0;
+    transform-origin: center;
     transform-box: fill-box;
     transition: opacity 0.3s;
-  }
-  .scope-label {
-    fill: var(--text-dim);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 8px;
-    text-anchor: start;
-    letter-spacing: 0.1em;
   }
 
   /* =================== Animations =================== */
@@ -200,19 +194,19 @@
   @keyframes pulse-slow { 0%,100% { transform: scale(1);    opacity: 0.6; } 50% { transform: scale(1.06); opacity: 1; } }
   @keyframes pulse-fast { 0%,100% { transform: scale(1);    opacity: 0.9; } 50% { transform: scale(1.15); opacity: 1; } }
   @keyframes pulse-think{ 0%,100% { transform: scale(0.92); opacity: 0.4; } 50% { transform: scale(1.05); opacity: 0.7; } }
-  @keyframes scope-pulse{ 0%,100% { transform: scaleX(0.35);} 50% { transform: scaleX(1);} }
+  @keyframes amp-pulse { 0%,100% { transform: scaleY(0.25); opacity: 0.45;} 50% { transform: scaleY(1); opacity: 1;} }
   @keyframes pointer-spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
 
-  .compass-group   { transform-origin: 300px 250px; animation: rotcw  140s linear infinite; }
-  .ring-outer-grp  { transform-origin: 300px 250px; animation: rotccw 110s linear infinite; }
-  .ring-mid-grp    { transform-origin: 300px 250px; animation: rotcw   75s linear infinite; }
+  .compass-group   { transform-origin: 500px 250px; animation: rotcw  140s linear infinite; }
+  .ring-outer-grp  { transform-origin: 500px 250px; animation: rotccw 110s linear infinite; }
+  .ring-mid-grp    { transform-origin: 500px 250px; animation: rotcw   75s linear infinite; }
 
   /* IDLE */
   [data-state="idle"] .core,
   [data-state="idle"] .core-inner {
     animation: pulse-slow 4s ease-in-out infinite;
   }
-  [data-state="idle"] .scope-line { opacity: 0.35; }
+  [data-state="idle"] .amp-bar { opacity: 0.25; }
 
   /* LISTENING */
   [data-state="listening"] .core,
@@ -226,12 +220,12 @@
       drop-shadow(0 0 12px rgba(91, 224, 238, 0.85))
       drop-shadow(0 0 20px rgba(91, 224, 238, 0.45));
   }
-  [data-state="listening"] .scope-line { opacity: 0.7; }
+  [data-state="listening"] .amp-bar { opacity: 0.55; }
 
   /* THINKING */
   [data-state="thinking"] .ring-dashed {
     opacity: 1;
-    transform-origin: 300px 250px;
+    transform-origin: 500px 250px;
     animation: rotcw 3.2s linear infinite;
   }
   [data-state="thinking"] .core,
@@ -245,10 +239,10 @@
       drop-shadow(0 0 6px rgba(91, 224, 238, 0.4));
   }
 
-  /* SPEAKING — scope readout becomes amplitude meter, label glows hardest */
-  [data-state="speaking"] .scope-line {
+  /* SPEAKING — rim amplitude bars pulse, label glows hardest */
+  [data-state="speaking"] .amp-bar {
     opacity: 1;
-    animation: scope-pulse var(--dur, 0.5s) ease-in-out infinite;
+    animation: amp-pulse var(--dur, 0.5s) ease-in-out infinite;
     animation-delay: var(--delay, 0s);
   }
   [data-state="speaking"] .core { filter: drop-shadow(0 0 28px var(--primary-strong)); }
@@ -358,9 +352,9 @@
   <div class="stage">
     <!--
       Single SVG canvas, 1000x500 viewBox.
-      Orb is anchored at (300, 250) — left-of-center on purpose.
-      Right half (x > 500) is reserved for future content panels
-      (map, dashboard, etc.) in later phases.
+      Orb is anchored at (500, 250) — true center, directly above the
+      SYSTEM READY bar. When content mode lands in Phase 3+, the orb
+      will animate left to make room for a panel on the right.
     -->
     <svg class="display-svg" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid meet">
 
@@ -369,50 +363,50 @@
 
       <!-- Outer arc-segmented ring (counter-rotates) -->
       <g class="ring-outer-grp">
-        <circle class="ring-outer" cx="300" cy="250" r="170" />
+        <circle class="ring-outer" cx="500" cy="250" r="170" />
       </g>
 
       <!-- Mid arc-segmented ring (rotates) -->
       <g class="ring-mid-grp">
-        <circle class="ring-mid" cx="300" cy="250" r="140" />
+        <circle class="ring-mid" cx="500" cy="250" r="140" />
       </g>
 
       <!-- Dashed thinking ring (visible only in thinking state) -->
-      <circle class="ring-dashed" cx="300" cy="250" r="115" />
+      <circle class="ring-dashed" cx="500" cy="250" r="115" />
 
-      <!-- Thin static inner ring -->
-      <circle class="ring-thin" cx="300" cy="250" r="98" />
-      <circle class="ring-thin" cx="300" cy="250" r="82" />
+      <!-- Thin static inner rings -->
+      <circle class="ring-thin" cx="500" cy="250" r="98" />
+      <circle class="ring-thin" cx="500" cy="250" r="82" />
+
+      <!-- Rim amplitude bars (radial, generated in JS). Visible in
+           the speaking state, faint otherwise. -->
+      <g class="amp-bars" id="amp-bars"></g>
 
       <!-- Core: outer glowing ring + subtle inner ring (mostly hollow
            so the glowing JARVIS text reads clearly inside) -->
-      <circle class="core" cx="300" cy="250" r="62" />
-      <circle class="core-inner" cx="300" cy="250" r="48" />
+      <circle class="core" cx="500" cy="250" r="62" />
+      <circle class="core-inner" cx="500" cy="250" r="48" />
 
       <!-- J.A.R.V.I.S label — bright, glowing -->
-      <text class="label" x="300" y="252">J.A.R.V.I.S</text>
+      <text class="label" x="500" y="252">J.A.R.V.I.S</text>
 
       <!-- Small bright pip just below the text -->
-      <circle class="core-pip" cx="300" cy="268" r="2.2" />
+      <circle class="core-pip" cx="500" cy="268" r="2.2" />
 
       <!-- Triangle pointer at 3 o'clock (just outside ring-mid) -->
-      <polygon class="pointer" points="470,242 484,250 470,258" />
-      <polygon class="pointer" points="455,245 463,250 455,255" />
+      <polygon class="pointer" points="670,242 684,250 670,258" />
+      <polygon class="pointer" points="655,245 663,250 655,255" />
 
-      <!-- Left bracket -->
+      <!-- Left bracket at 9 o'clock -->
       <g class="bracket">
-        <line class="bracket-line" x1="120" y1="244" x2="120" y2="256" />
-        <line class="bracket-line" x1="120" y1="244" x2="140" y2="244" />
-        <line class="bracket-line" x1="120" y1="256" x2="140" y2="256" />
-        <line class="bracket-line" x1="140" y1="250" x2="150" y2="250" />
-        <line class="bracket-tick" x1="100" y1="250" x2="120" y2="250" />
-        <line class="bracket-tick" x1="105" y1="240" x2="115" y2="240" />
-        <line class="bracket-tick" x1="105" y1="260" x2="115" y2="260" />
+        <line class="bracket-line" x1="320" y1="244" x2="320" y2="256" />
+        <line class="bracket-line" x1="320" y1="244" x2="340" y2="244" />
+        <line class="bracket-line" x1="320" y1="256" x2="340" y2="256" />
+        <line class="bracket-line" x1="340" y1="250" x2="350" y2="250" />
+        <line class="bracket-tick" x1="300" y1="250" x2="320" y2="250" />
+        <line class="bracket-tick" x1="305" y1="240" x2="315" y2="240" />
+        <line class="bracket-tick" x1="305" y1="260" x2="315" y2="260" />
       </g>
-
-      <!-- Right scope readout: 9 horizontal lines varying in length.
-           Acts as the speaking-state amplitude meter. -->
-      <g class="scope-group" id="scope-group"></g>
 
     </svg>
   </div>
@@ -432,7 +426,7 @@
 
 <script>
   const SVGNS = 'http://www.w3.org/2000/svg';
-  const CX = 300, CY = 250;  // orb center
+  const CX = 500, CY = 250;  // orb center
 
   // ---- Compass ring ----
   (function() {
@@ -470,34 +464,30 @@
     });
   })();
 
-  // ---- Scope readout (right side, 9 lines) ----
+  // ---- Rim amplitude bars (v1-style radial bars around the orb) ----
   (function() {
-    const g = document.getElementById('scope-group');
-    const startX = 510;        // just past the right edge of ring-outer
-    const lengths = [80, 64, 92, 56, 104, 48, 88, 72, 60];
-    const N = lengths.length;
-    const spacing = 18;
-    const totalH = (N - 1) * spacing;
-    const startY = CY - totalH / 2;
+    const g = document.getElementById('amp-bars');
+    const N = 48;
+    const baseR = 148;   // inner end of each bar (just inside ring-mid at r=140? actually outside)
     for (let i = 0; i < N; i++) {
-      const y = startY + i * spacing;
+      const angle = (i / N) * 360 - 90;
+      const rad = angle * Math.PI / 180;
+      const len = 8 + Math.random() * 16;
+      const x1 = CX + Math.cos(rad) * baseR;
+      const y1 = CY + Math.sin(rad) * baseR;
+      const x2 = CX + Math.cos(rad) * (baseR + len);
+      const y2 = CY + Math.sin(rad) * (baseR + len);
       const line = document.createElementNS(SVGNS, 'line');
-      line.setAttribute('class', 'scope-line');
-      line.setAttribute('x1', startX);
-      line.setAttribute('y1', y);
-      line.setAttribute('x2', startX + lengths[i]);
-      line.setAttribute('y2', y);
-      line.style.setProperty('--dur', (0.35 + Math.random() * 0.45) + 's');
-      line.style.setProperty('--delay', (Math.random() * 0.5) + 's');
+      line.setAttribute('class', 'amp-bar');
+      line.setAttribute('x1', x1.toFixed(2));
+      line.setAttribute('y1', y1.toFixed(2));
+      line.setAttribute('x2', x2.toFixed(2));
+      line.setAttribute('y2', y2.toFixed(2));
+      // Staggered animation per-bar
+      line.style.setProperty('--dur', (0.38 + Math.random() * 0.5) + 's');
+      line.style.setProperty('--delay', (Math.random() * 0.6) + 's');
       g.appendChild(line);
     }
-    // Tiny scope label
-    const t = document.createElementNS(SVGNS, 'text');
-    t.setAttribute('class', 'scope-label');
-    t.setAttribute('x', startX);
-    t.setAttribute('y', startY - 12);
-    t.textContent = 'AMP / dB';
-    g.appendChild(t);
   })();
 
   // ---- State machine ----

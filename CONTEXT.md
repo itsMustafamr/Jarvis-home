@@ -97,6 +97,17 @@ CONTEXT.md         This file
 
 (Newest first. Dated entries.)
 
+### 2026-05-23 — Phase 1.7: Re-center orb + restore rim amplitude bars
+**Files modified:** `hud.html`.
+**Reason:** Orb was anchored at viewBox `(300, 250)` (left-of-center) — user wants it directly above the SYSTEM READY bar (i.e. dead-center). Also preferred the original around-the-rim amplitude bars over the right-side scope readout introduced in Phase 1.5.
+**Changes:**
+- All orb elements moved from `cx="300"` → `cx="500"`. Bracket translated `+200` (now at `x=300–350`). Triangle pointer translated `+200` (now at `x=655–684`). Rotation `transform-origin` values updated to `500px 250px`.
+- Removed `.scope-line` / `.scope-label` styles + `scope-group` SVG element + scope JS generator.
+- Re-added `.amp-bar` class + 48 radial bars generated in JS at `baseR=148`, length `8 + rand*16`. They render as faint outward radial ticks just outside `ring-mid`.
+- Speaking-state animation: `amp-pulse` keyframes (`scaleY 0.25 → 1` + opacity `0.45 → 1`) with staggered `--dur` and `--delay` per bar.
+- `idle` shows bars at low opacity (`0.25`), `listening` at `0.55`, `speaking` runs the full pulse animation.
+**Status:** Awaiting user reaction before Phase 2 wiring. Right half of viewBox is now empty space — when content mode lands in Phase 3+, the orb will animate left to make room for the content panel on the right.
+
 ### 2026-05-23 — Phase 1.6: Glowing JARVIS text in the orb center
 **Files modified:** `hud.html`.
 **Reason:** Reference image shows the J.A.R.V.I.S text glowing inside a relatively dark interior. Previous version had the label set to `fill: #02101a` (dark) on top of a bright cyan-filled core — text was invisible.
