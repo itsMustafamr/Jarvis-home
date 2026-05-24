@@ -97,10 +97,30 @@ CONTEXT.md         This file
 
 (Newest first. Dated entries.)
 
-### 2026-05-23 — Extended RX_RECALL phrasings
+### 2026-05-23 — Phase 1 of JARVIS HUD: orb shell
+**Files added:** `hud.html` — single self-contained page (~370 lines) served by the existing `python -m http.server 8000` (or `jarvis-http.service` when systemd is on). Pure SVG + CSS animations, no external JS deps; loads Orbitron + JetBrains Mono from Google Fonts.
+**Visuals:**
+- Cyan-on-near-black palette (`#5ee5ff` on `#030710` with a slight radial gradient).
+- SVG orb: 60-tick rotating compass ring with N/E/S/W cardinal labels, outer ring (counter-rotating, 80s), dashed "thinking" ring, mid ring (rotating, 50s), inner ring, glowing core with inner highlight, JARVIS text centered.
+- HUD chrome: corner brackets, top strip with `SYS` / `MODE` / `UTC` clock / `PWR`, bottom status line + caption area.
+- Subtle scanline texture overlay.
+**States:** `idle` (slow pulse) / `listening` (fast pulse, brighter glow) / `thinking` (dashed ring rotates, core dims) / `speaking` (amplitude bars visible around rim, faster pulse) / `error` (red palette swap). State changes are driven by `data-state` on `<body>` and transition via CSS.
+**API:** `window.HUD.setState('listening' | 'thinking' | ...)` and `window.HUD.setCaption('reply text...')` — ready for Phase 2 to call from a WebSocket handler.
+**Dev affordances:** dev panel with 5 buttons to flip states manually (hide with `D`), number keys `1..5` switch states, `F` toggles fullscreen, `?demo=1` URL param cycles states automatically (good for showcase recordings).
+**Status:** Not yet wired to the pipeline. Phase 2 adds state-event broadcasting from `server.py` / `local_input.py` over WebSocket.
+
+### 2026-05-23 ✅ Memory polish: postfix remember-that + first-person rewrites + interrogative guard (verified)
+**Files modified:** `memory.py`. Four changes:
+- New `RX_REMEMBER_POSTFIX` for "[fact]. Remember that.", "[fact], note that.", "[fact]. Make a note of that." — captures the content *before* the trailing tag instead of after. Checked before `RX_REMEMBER` in `handle()`.
+- `_FIRST_PERSON_REWRITES` table replaces the if/elif chain in `_normalize_for_storage`, and adds prefer/want/need/take/drink/eat/work/live/go on top of the original am/'m/have/'ve/like/love/hate/don't-like/my set.
+- `_USELESS_CONTENT` set (`that`, `this`, `it`, `those`, etc.) is rejected as fact content with "Remember what, sir?" so utterances like "Remember that." don't pollute the database.
+- New `INTERROGATIVE_AUX_RX` filter in `handle()` short-circuits "Can/Could/Did/Would/etc. you ... remember/note ..." phrasings to "Remember what, sir?" — without it, "Could you remember that for me?" stored "for me" as a fact. Recall is checked *before* this filter so "Do you know about me" still works.
+**Reason:** Anker test 2026-05-23 04:39:01 observed three polish issues — `"I like coffee. Remember that."` stored `"that"`, `"I prefer X"` didn't get normalized to third-person, and the database could accept useless one-word captures.
+**Status:** Awaiting Anker re-test.
+
+### 2026-05-23 ✅ Extended RX_RECALL phrasings (verified)
 **Files modified:** `memory.py` — RX_RECALL now covers "do you know / remember (anything) about me", "what's on file", "what's in your memory", "anything stored", etc., in addition to the original "what do you know / what have I told you" set.
 **Reason:** Anker test 2026-05-23 04:32:24 showed "Do you know about me?" falling through to LLM, which produced "I have noted that, sir." — a mild hallucination conflating the recall with the previous remember turn.
-**Status:** Awaiting Anker re-test.
 
 ### 2026-05-23 ✅ Punctuation-tolerant intent matching (verified)
 **Files modified:** `memory.py` and `time_intent.py` both gained a `_strip_intent_punct()` helper that replaces commas / periods / semicolons / colons / `?` / `!` with spaces before regex matching. Applied at the top of `is_X_intent` and `handle()` in each module.

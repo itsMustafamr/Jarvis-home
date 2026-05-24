@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JARVIS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-0: #030710;
+    --bg-1: #061021;
+    --primary: #5ee5ff;
+    --primary-dim: rgba(94, 229, 255, 0.5);
+    --primary-faint: rgba(94, 229, 255, 0.12);
+    --accent: #ff7a40;
+    --danger: #ff5e6e;
+    --text: #b8d8e8;
+    --text-dim: rgba(184, 216, 232, 0.5);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg-0);
+    color: var(--text);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    overflow: hidden;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background:
+      radial-gradient(ellipse at center, var(--bg-1) 0%, var(--bg-0) 75%),
+      var(--bg-0);
+    position: relative;
+  }
+
+  /* Subtle scanline texture */
+  body::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent 0px, transparent 3px,
+      rgba(94, 229, 255, 0.015) 3px, rgba(94, 229, 255, 0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* Corner brackets */
+  .corner {
+    position: absolute;
+    width: 50px; height: 50px;
+    border: 1px solid var(--primary-dim);
+    z-index: 2;
+  }
+  .corner-tl { top: 20px; left: 20px; border-right: 0; border-bottom: 0; }
+  .corner-tr { top: 20px; right: 20px; border-left: 0; border-bottom: 0; }
+  .corner-bl { bottom: 20px; left: 20px; border-right: 0; border-top: 0; }
+  .corner-br { bottom: 20px; right: 20px; border-left: 0; border-top: 0; }
+
+  /* Top HUD strip */
+  .hud-top {
+    position: absolute;
+    top: 28px; left: 92px; right: 92px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--primary-dim);
+    z-index: 3;
+  }
+  .hud-top .group { display: flex; gap: 24px; }
+  .hud-top .label-key { color: var(--text-dim); margin-right: 6px; }
+
+  /* Main orb stage */
+  .stage {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    z-index: 2;
+  }
+
+  .orb {
+    width: min(70vmin, 580px);
+    height: min(70vmin, 580px);
+    display: block;
+  }
+
+  .orb circle, .orb line, .orb path { fill: none; }
+
+  .ring-outer  { stroke: var(--primary-dim); stroke-width: 0.5; }
+  .ring-mid    { stroke: var(--primary); stroke-width: 0.8; opacity: 0.7; }
+  .ring-inner  { stroke: var(--primary); stroke-width: 0.4; opacity: 0.45; }
+
+  .ring-dashed {
+    stroke: var(--primary); stroke-width: 1;
+    stroke-dasharray: 7 5;
+    opacity: 0;
+    transform-origin: center;
+    transition: opacity 0.4s;
+  }
+
+  .compass-mark { stroke: var(--primary-dim); stroke-width: 0.5; }
+  .compass-mark.major { stroke: var(--primary); stroke-width: 1; opacity: 0.9; }
+  .compass-text {
+    fill: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 6px;
+    text-anchor: middle;
+  }
+
+  .core {
+    fill: var(--primary-faint);
+    stroke: var(--primary);
+    stroke-width: 1.5;
+    filter: drop-shadow(0 0 8px var(--primary-dim));
+    transform-origin: center;
+    transform-box: fill-box;
+    transition: filter 0.3s, fill 0.3s, stroke 0.3s;
+  }
+
+  .core-inner {
+    fill: var(--primary);
+    opacity: 0.85;
+    filter: drop-shadow(0 0 6px var(--primary));
+    transform-origin: center;
+    transform-box: fill-box;
+    transition: fill 0.3s;
+  }
+
+  .label {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.42em;
+    fill: var(--bg-0);
+    font-size: 13px;
+    text-anchor: middle;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.4);
+    stroke-width: 0.5;
+  }
+
+  .amp-bar {
+    stroke: var(--primary); stroke-width: 1.8; stroke-linecap: round;
+    opacity: 0;
+    transform-origin: center;
+    transform-box: fill-box;
+    transition: opacity 0.3s;
+  }
+
+  /* ============ Animations ============ */
+
+  @keyframes rotate-cw  { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
+  @keyframes rotate-ccw { from { transform: rotate(0deg);} to { transform: rotate(-360deg);} }
+
+  @keyframes pulse-slow {
+    0%, 100% { transform: scale(1);    opacity: 0.55; }
+    50%      { transform: scale(1.08); opacity: 1; }
+  }
+  @keyframes pulse-fast {
+    0%, 100% { transform: scale(1);    opacity: 0.85; }
+    50%      { transform: scale(1.16); opacity: 1; }
+  }
+  @keyframes pulse-think {
+    0%, 100% { transform: scale(0.92); opacity: 0.35; }
+    50%      { transform: scale(1.04); opacity: 0.65; }
+  }
+  @keyframes amp-pulse {
+    0%, 100% { transform: scaleY(0.25); opacity: 0.45; }
+    50%      { transform: scaleY(1);    opacity: 1; }
+  }
+
+  /* Persistent rotations */
+  .compass-group     { transform-origin: center; animation: rotate-cw  120s linear infinite; }
+  .ring-outer-group  { transform-origin: center; animation: rotate-ccw  80s linear infinite; }
+  .ring-mid-group    { transform-origin: center; animation: rotate-cw   50s linear infinite; }
+
+  /* ----- IDLE ----- */
+  [data-state="idle"] .core,
+  [data-state="idle"] .core-inner {
+    animation: pulse-slow 4s ease-in-out infinite;
+  }
+
+  /* ----- LISTENING ----- */
+  [data-state="listening"] .core,
+  [data-state="listening"] .core-inner {
+    animation: pulse-fast 0.9s ease-in-out infinite;
+  }
+  [data-state="listening"] .core {
+    filter: drop-shadow(0 0 18px var(--primary));
+  }
+
+  /* ----- THINKING ----- */
+  [data-state="thinking"] .ring-dashed {
+    opacity: 1;
+    animation: rotate-cw 3.5s linear infinite;
+  }
+  [data-state="thinking"] .core,
+  [data-state="thinking"] .core-inner {
+    animation: pulse-think 1.4s ease-in-out infinite;
+  }
+
+  /* ----- SPEAKING ----- */
+  [data-state="speaking"] .amp-bar {
+    opacity: 1;
+    animation: amp-pulse var(--amp-duration, 0.6s) ease-in-out infinite;
+    animation-delay: var(--amp-delay, 0s);
+  }
+  [data-state="speaking"] .core {
+    filter: drop-shadow(0 0 22px var(--primary));
+  }
+  [data-state="speaking"] .core,
+  [data-state="speaking"] .core-inner {
+    animation: pulse-fast 1.6s ease-in-out infinite;
+  }
+
+  /* ----- ERROR ----- */
+  [data-state="error"] .core {
+    fill: rgba(255, 94, 110, 0.25);
+    stroke: var(--danger);
+    filter: drop-shadow(0 0 14px var(--danger));
+    animation: pulse-fast 0.6s ease-in-out infinite;
+  }
+  [data-state="error"] .core-inner { fill: var(--danger); }
+  [data-state="error"] .label { stroke: var(--danger); }
+
+  /* ============ Bottom HUD strip ============ */
+  .hud-bottom {
+    position: absolute;
+    bottom: 28px; left: 92px; right: 92px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    z-index: 3;
+  }
+  .status-line {
+    display: flex; align-items: center; gap: 14px;
+    font-size: 10px; letter-spacing: 0.32em; text-transform: uppercase;
+    color: var(--primary);
+  }
+  .status-line::before, .status-line::after {
+    content: ''; display: inline-block;
+    width: 48px; height: 1px; background: var(--primary-dim);
+  }
+  .caption {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 15px; font-weight: 400;
+    letter-spacing: 0.14em;
+    color: var(--text);
+    min-height: 1.6em;
+    text-align: center;
+    max-width: 80%;
+    transition: opacity 0.3s;
+  }
+
+  /* ============ Dev panel ============ */
+  .dev-panel {
+    position: absolute;
+    bottom: 90px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; gap: 6px;
+    z-index: 10;
+    opacity: 0.55;
+    transition: opacity 0.2s;
+  }
+  .dev-panel:hover { opacity: 1; }
+  .dev-panel.hidden { display: none; }
+  .dev-panel button {
+    background: transparent;
+    border: 1px solid var(--primary-dim);
+    color: var(--primary);
+    padding: 6px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .dev-panel button:hover {
+    background: var(--primary-faint);
+    border-color: var(--primary);
+  }
+  .dev-panel button.active {
+    background: var(--primary-faint);
+    border-color: var(--primary);
+    box-shadow: 0 0 12px var(--primary-dim);
+    color: #fff;
+  }
+</style>
+</head>
+<body data-state="idle">
+  <div class="corner corner-tl"></div>
+  <div class="corner corner-tr"></div>
+  <div class="corner corner-bl"></div>
+  <div class="corner corner-br"></div>
+
+  <div class="hud-top">
+    <div class="group">
+      <span><span class="label-key">SYS</span>JARVIS v1.0</span>
+      <span><span class="label-key">MODE</span><span id="mode-text">STANDBY</span></span>
+    </div>
+    <div class="group">
+      <span><span class="label-key">UTC</span><span id="clock">--:--:--</span></span>
+      <span><span class="label-key">PWR</span>100%</span>
+    </div>
+  </div>
+
+  <div class="stage">
+    <svg class="orb" viewBox="-100 -100 200 200">
+      <g class="compass-group" id="compass-group"></g>
+
+      <g class="ring-outer-group">
+        <circle class="ring-outer" r="85" />
+      </g>
+
+      <circle class="ring-dashed" r="68" />
+
+      <g class="ring-mid-group">
+        <circle class="ring-mid" r="55" />
+      </g>
+
+      <circle class="ring-inner" r="44" />
+
+      <g id="amp-bars"></g>
+
+      <circle class="core" r="34" />
+      <circle class="core-inner" r="26" />
+
+      <text class="label" y="3">JARVIS</text>
+    </svg>
+  </div>
+
+  <div class="dev-panel" id="dev-panel">
+    <button data-set-state="idle" class="active">IDLE</button>
+    <button data-set-state="listening">LISTENING</button>
+    <button data-set-state="thinking">THINKING</button>
+    <button data-set-state="speaking">SPEAKING</button>
+    <button data-set-state="error">ERROR</button>
+  </div>
+
+  <div class="hud-bottom">
+    <div class="status-line"><span id="status-text">SYSTEM READY</span></div>
+    <div class="caption" id="caption"></div>
+  </div>
+
+<script>
+  // ---- Compass tick marks ----
+  (function() {
+    const g = document.getElementById('compass-group');
+    const N = 60;
+    for (let i = 0; i < N; i++) {
+      const angle = (i / N) * 360 - 90;
+      const rad = angle * Math.PI / 180;
+      const isMajor = i % 5 === 0;
+      const r1 = 90, r2 = isMajor ? 96 : 93;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', (Math.cos(rad) * r1).toFixed(2));
+      line.setAttribute('y1', (Math.sin(rad) * r1).toFixed(2));
+      line.setAttribute('x2', (Math.cos(rad) * r2).toFixed(2));
+      line.setAttribute('y2', (Math.sin(rad) * r2).toFixed(2));
+      line.setAttribute('class', isMajor ? 'compass-mark major' : 'compass-mark');
+      g.appendChild(line);
+    }
+    // N/E/S/W
+    const cardinals = [['N', -90], ['E', 0], ['S', 90], ['W', 180]];
+    cardinals.forEach(([label, deg]) => {
+      const rad = deg * Math.PI / 180;
+      const r = 81;
+      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      txt.setAttribute('class', 'compass-text');
+      txt.setAttribute('x', (Math.cos(rad) * r).toFixed(2));
+      txt.setAttribute('y', (Math.sin(rad) * r + 2).toFixed(2));
+      txt.textContent = label;
+      g.appendChild(txt);
+    });
+  })();
+
+  // ---- Amplitude bars ----
+  (function() {
+    const g = document.getElementById('amp-bars');
+    const N = 36;
+    const baseR = 75;
+    for (let i = 0; i < N; i++) {
+      const angle = (i / N) * 360 - 90;
+      const rad = angle * Math.PI / 180;
+      const len = 4 + Math.random() * 7;
+      const x1 = Math.cos(rad) * baseR;
+      const y1 = Math.sin(rad) * baseR;
+      const x2 = Math.cos(rad) * (baseR + len);
+      const y2 = Math.sin(rad) * (baseR + len);
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('class', 'amp-bar');
+      line.setAttribute('x1', x1.toFixed(2));
+      line.setAttribute('y1', y1.toFixed(2));
+      line.setAttribute('x2', x2.toFixed(2));
+      line.setAttribute('y2', y2.toFixed(2));
+      line.style.setProperty('--amp-delay', (Math.random() * 0.6) + 's');
+      line.style.setProperty('--amp-duration', (0.4 + Math.random() * 0.5) + 's');
+      g.appendChild(line);
+    }
+  })();
+
+  // ---- State machine ----
+  const STATES = {
+    idle:      { mode: 'STANDBY', status: 'SYSTEM READY',     caption: '' },
+    listening: { mode: 'CAPTURE', status: 'LISTENING',        caption: '...' },
+    thinking:  { mode: 'PROCESS', status: 'EVALUATING',       caption: '' },
+    speaking:  { mode: 'OUTPUT',  status: 'TRANSMITTING',     caption: '' },
+    error:     { mode: 'FAULT',   status: 'ERROR — SEE LOG', caption: '' },
+  };
+  const body = document.body;
+  const captionEl = document.getElementById('caption');
+  const statusEl  = document.getElementById('status-text');
+  const modeEl    = document.getElementById('mode-text');
+  const buttons   = document.querySelectorAll('.dev-panel button');
+
+  window.HUD = {
+    setState(state) {
+      if (!STATES[state]) return;
+      body.dataset.state = state;
+      const s = STATES[state];
+      modeEl.textContent = s.mode;
+      statusEl.textContent = s.status;
+      if (state !== 'speaking') captionEl.textContent = s.caption;
+      buttons.forEach(b => b.classList.toggle('active', b.dataset.setState === state));
+    },
+    setCaption(text) { captionEl.textContent = text || ''; }
+  };
+
+  buttons.forEach(b =>
+    b.addEventListener('click', () => HUD.setState(b.dataset.setState))
+  );
+
+  // ---- Live UTC clock ----
+  function tickClock() {
+    const d = new Date();
+    const pad = n => n.toString().padStart(2, '0');
+    document.getElementById('clock').textContent =
+      pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds());
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  // ---- Keyboard shortcuts ----
+  // d = toggle dev panel | 1..5 = set state | f = fullscreen
+  const KEY_STATE = { '1':'idle', '2':'listening', '3':'thinking', '4':'speaking', '5':'error' };
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'd' || e.key === 'D') {
+      document.getElementById('dev-panel').classList.toggle('hidden');
+    } else if (KEY_STATE[e.key]) {
+      HUD.setState(KEY_STATE[e.key]);
+    } else if (e.key === 'f' || e.key === 'F') {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    }
+  });
+
+  // ---- Demo cycle (?demo=1 cycles states automatically) ----
+  if (new URLSearchParams(location.search).get('demo') === '1') {
+    const cycle = ['idle', 'listening', 'thinking', 'speaking', 'idle'];
+    let i = 0;
+    setInterval(() => {
+      HUD.setState(cycle[i % cycle.length]);
+      if (cycle[i % cycle.length] === 'speaking') {
+        HUD.setCaption('All systems operational, sir.');
+      }
+      i++;
+    }, 2800);
+  }
+
+  HUD.setState('idle');
+</script>
+</body>
+</html>
