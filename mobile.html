@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- Mobile viewport: lock zoom, fill notch area, no user scaling so the
+     hold-to-talk button doesn't accidentally zoom on a long press. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- iOS PWA chrome: when added to home screen, launch fullscreen with
+     a dark status bar so the page background blends in. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JARVIS">
+<meta name="theme-color" content="#0a0a0a">
+<title>JARVIS</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    background: #0a0a0a; color: #e8e8e8;
+    font-family: -apple-system, system-ui, sans-serif;
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+    touch-action: manipulation;
+  }
+  body {
+    padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+    display: flex; flex-direction: column;
+  }
+  h1 {
+    font-weight: 300; letter-spacing: 6px; text-align: center;
+    margin: 18px 0 4px; font-size: 22px;
+  }
+  #status {
+    text-align: center; height: 18px; margin: 2px 0 10px;
+    font-size: 12px; letter-spacing: 0.5px;
+  }
+  .ws-good { color: #888; }
+  .ws-bad  { color: #ff6666; }
+  #log {
+    flex: 1; overflow-y: auto;
+    display: flex; flex-direction: column;
+    padding: 4px 4px 12px; gap: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .bubble {
+    max-width: 85%; padding: 10px 14px; border-radius: 16px;
+    line-height: 1.35; font-size: 15px; word-wrap: break-word;
+  }
+  .user   { background: #2a4a7a; align-self: flex-end; }
+  .jarvis { background: #1a1a1a; border: 1px solid #333; align-self: flex-start; }
+  .btn-wrap {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 8px 0 18px;
+  }
+  #btn {
+    width: 70vw; max-width: 280px;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+    background: #1a1a1a; border: 2px solid #333;
+    color: #888; font-size: 16px; letter-spacing: 1px;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.08s ease, background 0.15s, border-color 0.15s, color 0.15s;
+    -webkit-touch-callout: none;
+    cursor: pointer;
+  }
+  #btn.pressed {
+    background: #3a0a0a; border-color: #ff4444; color: #ff6666;
+    transform: scale(0.96);
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0   rgba(255,68,68,0.5); }
+    50%     { box-shadow: 0 0 0 26px rgba(255,68,68,0); }
+  }
+  .hint { color: #555; text-align: center; font-size: 11px; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <h1>JARVIS</h1>
+  <div id="status" class="ws-bad">connecting…</div>
+  <div id="log"></div>
+  <div class="btn-wrap">
+    <button id="btn">HOLD TO TALK</button>
+    <div class="hint">press &amp; hold, release to send</div>
+  </div>
+  <!-- playsinline so iOS doesn't try to take audio fullscreen -->
+  <audio id="player" playsinline webkit-playsinline style="display:none"></audio>
+
+<script>
+// -----------------------------------------------------------------------------
+// JARVIS mobile PWA. Same WS protocol as index.html (status / transcript /
+// reply / audio / frame_request / error) so server.py needs no changes.
+//
+// Differences from index.html:
+//   - WS URL is wss://<host>/ws when loaded over HTTPS (Tailscale Serve),
+//     ws://<host>:8765 otherwise (LAN dev).
+//   - Hold-to-talk via pointer events with setPointerCapture so finger drift
+//     during a hold doesn't cancel the recording.
+//   - First press unlocks iOS audio playback by playing a tiny silent WAV
+//     inside the user-gesture handler. Subsequent reply audio plays freely.
+//   - MediaRecorder MIME is feature-detected; Safari prefers audio/mp4.
+//   - Vision/camera path is auto-declined ("mobile.html has no camera").
+// -----------------------------------------------------------------------------
+
+const WS_URL = location.protocol === 'https:'
+  ? `wss://${location.host}/ws`
+  : `ws://${location.hostname}:8765`;
+
+const btn      = document.getElementById('btn');
+const statusEl = document.getElementById('status');
+const log      = document.getElementById('log');
+const player   = document.getElementById('player');
+
+let ws, mediaRecorder, chunks = [], recording = false;
+let audioUnlocked = false;
+let pickedMime = '';
+
+function setStatus(s, ok = true) {
+  statusEl.textContent = s;
+  statusEl.className = ok ? 'ws-good' : 'ws-bad';
+}
+
+function addBubble(text, who) {
+  const div = document.createElement('div');
+  div.className = 'bubble ' + who;
+  div.textContent = text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+// iOS Safari blocks audio playback until a user gesture has triggered at
+// least one play() call. We play a tiny silent WAV the first time the
+// user holds the button — after that, the <audio> element is "unlocked"
+// and reply WAVs from the server play without further interaction.
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+function unlockAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  player.src = SILENT_WAV;
+  const p = player.play();
+  if (p && p.catch) p.catch(() => {});
+}
+
+// Some browsers (notably iOS Safari) don't support audio/webm. Pick the
+// best MIME the runtime claims to support; fall back to browser default.
+function pickMimeType() {
+  if (!window.MediaRecorder) return '';
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4;codecs=mp4a.40.2',
+    'audio/mp4',
+    'audio/aac',
+  ];
+  for (const t of candidates) {
+    try { if (MediaRecorder.isTypeSupported(t)) return t; } catch (_) {}
+  }
+  return '';
+}
+
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.onopen  = () => setStatus('ready', true);
+  ws.onclose = () => { setStatus('disconnected, retrying…', false); setTimeout(connect, 2000); };
+  ws.onerror = (e) => console.error('ws error', e);
+  ws.onmessage = (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+    if (msg.type === 'status') setStatus(msg.msg, true);
+    else if (msg.type === 'transcript') addBubble(msg.text, 'user');
+    else if (msg.type === 'reply')      addBubble(msg.text, 'jarvis');
+    else if (msg.type === 'frame_request') {
+      // mobile.html intentionally does not implement the camera/vision
+      // path. Decline gracefully so the server doesn't hang waiting.
+      ws.send(JSON.stringify({type: 'frame', data_b64: null, reason: 'mobile.html has no camera'}));
+    }
+    else if (msg.type === 'audio') {
+      const wav = atob(msg.wav_b64);
+      const arr = new Uint8Array(wav.length);
+      for (let i = 0; i < wav.length; i++) arr[i] = wav.charCodeAt(i);
+      const blob = new Blob([arr], {type: 'audio/wav'});
+      player.src = URL.createObjectURL(blob);
+      player.play().catch(err => console.error('audio play failed', err));
+    }
+    else if (msg.type === 'error') {
+      setStatus('error: ' + msg.msg, false);
+      addBubble('[error: ' + msg.msg + ']', 'jarvis');
+    }
+  };
+}
+
+async function startRecording() {
+  if (recording) return;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({audio: true});
+  } catch (err) {
+    setStatus('mic permission denied', false);
+    return;
+  }
+  pickedMime = pickMimeType();
+  try {
+    mediaRecorder = new MediaRecorder(stream, pickedMime ? {mimeType: pickedMime} : undefined);
+  } catch (err) {
+    setStatus('MediaRecorder failed: ' + err.message, false);
+    stream.getTracks().forEach(t => t.stop());
+    return;
+  }
+  chunks = [];
+  mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(chunks, {type: pickedMime || 'audio/webm'});
+    blob.arrayBuffer().then(buf => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(buf);
+    });
+    stream.getTracks().forEach(t => t.stop());
+  };
+  mediaRecorder.start();
+  recording = true;
+  btn.classList.add('pressed');
+  btn.textContent = 'LISTENING…';
+  setStatus('listening', true);
+}
+
+function stopRecording() {
+  if (!recording) return;
+  if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+  recording = false;
+  btn.classList.remove('pressed');
+  btn.textContent = 'HOLD TO TALK';
+  setStatus('processing…', true);
+}
+
+// Pointer events cover both touch (iOS) and mouse (desktop). setPointerCapture
+// keeps events coming to the button even if the finger drifts a few pixels
+// during the hold, so we don't accidentally cancel mid-utterance.
+btn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+  unlockAudio();
+  startRecording();
+});
+btn.addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  stopRecording();
+});
+btn.addEventListener('pointercancel', () => stopRecording());
+
+// Suppress iOS Safari's long-press context menu and pinch-zoom gestures.
+document.addEventListener('contextmenu',   (e) => e.preventDefault());
+document.addEventListener('gesturestart',  (e) => e.preventDefault());
+
+connect();
+</script>
+</body>
+</html>

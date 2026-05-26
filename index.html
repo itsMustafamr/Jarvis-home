@@ -70,7 +70,14 @@
   <canvas id="snap" style="display:none"></canvas>
 
 <script>
-const WS_URL = `ws://${location.hostname}:8765`;
+// When loaded over HTTPS (e.g. through Tailscale Serve at
+// https://flash-nano.tail2b1983.ts.net), reach the WebSocket via the
+// `/ws` proxy on the same host using WSS. Otherwise fall back to the
+// LAN-direct ws://...:8765 endpoint that browsers on the same network
+// use when hitting the http.server on port 8000 directly.
+const WS_URL = location.protocol === 'https:'
+  ? `wss://${location.host}/ws`
+  : `ws://${location.hostname}:8765`;
 const btn = document.getElementById('btn');
 const status = document.getElementById('status');
 const log = document.getElementById('log');

@@ -2,7 +2,7 @@
 
 Living state of the Jarvis-home project. Read this at the start of every session — it is the single source of truth for setup, what's been built, what's broken, and what's next.
 
-Last updated: 2026-05-23.
+Last updated: 2026-05-25.
 
 ---
 
@@ -99,6 +99,30 @@ CONTEXT.md         This file
 ## Recent work
 
 (Newest first. Dated entries.)
+
+### 2026-05-25 — iPhone PWA over Tailscale (mobile.html + WSS support)
+**Network:** Tailscale installed on Jetson (already had 1.98.2, upgraded to 1.98.3 via the official install script) and on iPhone 15 Pro Max. Tailnet name is **`tail2b1983.ts.net`**; Jetson hostname is **`flash-nano.tail2b1983.ts.net`** (`100.112.115.124`). MagicDNS + HTTPS Certificates both enabled in the admin console.
+**Tailscale Serve mounts on Jetson (persistent via `--bg`):**
+- `https://flash-nano.tail2b1983.ts.net/`   → reverse-proxy → `http://127.0.0.1:8000` (the existing `python -m http.server` serving static HTML)
+- `https://flash-nano.tail2b1983.ts.net/ws` → reverse-proxy → `http://127.0.0.1:8765` (the `server.py` WebSocket, Upgrade passes through cleanly — verified with a `wss://...` console probe returning `WS_OPEN`)
+Set up via:
+```
+sudo tailscale serve --bg --set-path=/   8000
+sudo tailscale serve --bg --set-path=/ws 8765
+```
+**Firewall mode tweak:** Added `TS_DEBUG_FIREWALL_MODE=auto` to `/etc/default/tailscaled` to try nftables-mode rules, but the Jetson L4T kernel doesn't have the `nf_tables` netlink module compiled in, so the heuristic falls back to iptables. The cosmetic `--restore-mark` health-check warning therefore persists; it is only the rp_filter connmark workaround and does not affect Serve / tailnet reachability. Leave as-is.
+**Files added:** `mobile.html` — dedicated iPhone PWA page served from the same `http.server`. Key choices:
+- Auto-detects HTTPS vs HTTP and uses `wss://${location.host}/ws` accordingly so the same file works locally and through Tailscale.
+- Hold-to-talk via pointer events + `setPointerCapture` (finger drift during a hold does not cancel the recording).
+- iOS audio playback unlocked on first user gesture by playing a tiny silent WAV (Safari blocks audio until a gesture has triggered `play()`).
+- `MediaRecorder` MIME is feature-detected with iOS-friendly fallbacks (`audio/webm;codecs=opus` → `audio/webm` → `audio/mp4;codecs=mp4a.40.2` → `audio/mp4` → `audio/aac` → default). Server-side `pipeline.transcode_to_wav` uses `ffmpeg -i` which auto-detects the container, so any of these work.
+- Vision/camera path is auto-declined (`{type:'frame', data_b64:null, reason:'mobile.html has no camera'}`); the camera UI from `index.html` is intentionally left out of v1.
+- Apple PWA meta tags (`apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, `theme-color`) so "Add to Home Screen" launches fullscreen.
+- Viewport locked (`maximum-scale=1, user-scalable=no`) so long-press doesn't zoom; `gesturestart` / `contextmenu` suppressed.
+- Big circular button sized at `70vw` (capped 280px) with the same red-pulse "recording" style as `index.html`.
+**Files modified:** `index.html` — the hardcoded `const WS_URL = \`ws://${location.hostname}:8765\`` is now protocol-aware: `wss://${location.host}/ws` when loaded over HTTPS, the old LAN-direct form otherwise. The Mac browser path (loaded from `http://flash-nano:8000/`) is unchanged; loading the same page through the Tailscale HTTPS URL now works too without mixed-content blocking.
+**No server-side changes.** `server.py` and `pipeline.py` are unchanged — the WS message protocol (`status` / `transcript` / `reply` / `frame_request` / `audio` / `error`) is shared.
+**Status:** Awaiting iPhone test. URL is `https://flash-nano.tail2b1983.ts.net/mobile.html`.
 
 ### 2026-05-24 — Guard intent + HUD ERROR state wiring
 **Files added:** `guard.py`. New intent module with three regex categories and a `GuardReply(str)` sentinel:
